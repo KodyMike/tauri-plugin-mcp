@@ -48,12 +48,15 @@ Then, register the plugin in your Tauri application:
         info!("Development build detected, enabling MCP plugin");
         tauri::Builder::default()
         .plugin(tauri_mcp::init_with_config(
-         tauri_mcp::PluginConfig::new(String::new("APPLICATION_NAME")) 
+         tauri_mcp::PluginConfig::new("APPLICATION_NAME".to_string())
                 .start_socket_server(true)
                 // For IPC socket (default)
                 .socket_path("/tmp/tauri-mcp.sock")
                 // Or for TCP socket
                 // .tcp("127.0.0.1", 9999)
+                // For multi-webview architectures where the window label differs
+                // from the webview label (e.g., window "main" contains webview "preview")
+                // .default_webview_label("preview".to_string())
         ));
     }
 ```

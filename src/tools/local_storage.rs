@@ -3,8 +3,9 @@ use serde_json::Value;
 use std::fmt;
 use std::sync::mpsc;
 use std::time::Duration;
-use tauri::{AppHandle, Emitter, Listener, Manager, Runtime};
+use tauri::{AppHandle, Emitter, Listener, Runtime};
 
+use crate::desktop::get_emit_target;
 use crate::error::Error;
 use crate::models::LocalStorageRequest;
 use crate::socket_server::SocketResponse;
@@ -123,16 +124,6 @@ pub async fn handle_get_local_storage<R: Runtime>(
             error: Some(e.to_string()),
         }),
     }
-}
-
-/// Get the emit target label for multi-webview architecture.
-fn get_emit_target<R: Runtime>(app: &AppHandle<R>, window_label: &str) -> String {
-    if window_label == "main" && app.get_webview_window(window_label).is_none() {
-        if app.get_webview("preview").is_some() {
-            return "preview".to_string();
-        }
-    }
-    window_label.to_string()
 }
 
 // Implementation function

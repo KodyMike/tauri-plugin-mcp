@@ -204,7 +204,7 @@ pub async fn take_screenshot<R: Runtime>(
         .unwrap_or_else(|| "main".to_string());
 
     // Get application name from params or use a default
-    let application_name = params.application_name.clone().unwrap_or_else(|| "moss".to_string());
+    let application_name = params.application_name.clone().unwrap_or_default();
 
     // Get window title from the handle (works with both Window and WebviewWindow)
     let window_title = get_window_title_from_handle(&window_context.window_handle)?;

@@ -73,6 +73,11 @@ pub struct PluginConfig {
     pub socket_type: SocketType,
     /// Whether to start the socket server automatically. Default is true.
     pub start_socket_server: bool,
+    /// Default webview label to use when a window label doesn't match a WebviewWindow.
+    /// In multi-webview architectures, the window "main" may contain a child webview
+    /// with a different label (e.g., "preview"). Set this to that webview's label so
+    /// the plugin knows where to send events and evaluate JS.
+    pub default_webview_label: Option<String>,
 }
 
 impl PluginConfig {
@@ -82,6 +87,7 @@ impl PluginConfig {
             application_name,
             socket_type: SocketType::default(),
             start_socket_server: true,
+            default_webview_label: None,
         }
     }
 
@@ -100,6 +106,14 @@ impl PluginConfig {
     /// Set whether to start the socket server automatically.
     pub fn start_socket_server(mut self, start: bool) -> Self {
         self.start_socket_server = start;
+        self
+    }
+
+    /// Set the default webview label for multi-webview architectures.
+    /// When a window label (e.g., "main") doesn't directly correspond to a WebviewWindow,
+    /// this label is used to find the correct webview for JS evaluation and event emission.
+    pub fn default_webview_label(mut self, label: String) -> Self {
+        self.default_webview_label = Some(label);
         self
     }
 }

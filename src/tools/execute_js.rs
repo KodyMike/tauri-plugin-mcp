@@ -3,8 +3,9 @@ use serde_json::Value;
 use std::fmt;
 use std::sync::mpsc;
 use std::time::Duration;
-use tauri::{AppHandle, Emitter, Listener, Manager, Runtime};
+use tauri::{AppHandle, Emitter, Listener, Runtime};
 
+use crate::desktop::get_emit_target;
 use crate::error::Error;
 use crate::socket_server::SocketResponse;
 
@@ -117,18 +118,8 @@ async fn execute_js_in_window<R: Runtime>(
     // Get timeout or use default (5 seconds)
     let timeout = Duration::from_millis(params.timeout_ms.unwrap_or(5000));
 
-    // Determine the target label for emit_to
-    // In multi-webview architecture, window "main" has webview "preview"
-    let emit_target = if window_label == "main" {
-        // Check if this is multi-webview architecture
-        if app.get_webview_window(&window_label).is_none() && app.get_webview("preview").is_some() {
-            "preview".to_string()
-        } else {
-            window_label.clone()
-        }
-    } else {
-        window_label.clone()
-    };
+    // Determine the target label for emit_to (uses configured fallback for multi-webview)
+    let emit_target = get_emit_target(&app, &window_label);
 
     // Emit event to execute the JavaScript in the specified webview
     app.emit_to(&emit_target, "execute-js", &params.code)

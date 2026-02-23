@@ -16,6 +16,13 @@ use std::time::{Duration, Instant};
 use tauri::{AppHandle, Manager, Runtime, plugin::PluginApi};
 use log::info;
 
+// ----- Webview Fallback Config -----
+
+/// Stores the configured fallback webview label, managed as Tauri state.
+pub struct WebviewFallbackConfig {
+    pub label: Option<String>,
+}
+
 // ----- Window/Webview Resolution Helpers -----
 
 /// Represents either a WebviewWindow or a separate Window handle
@@ -127,20 +134,38 @@ pub fn get_window_handle<R: Runtime>(app: &AppHandle<R>, label: &str) -> Option<
 /// Get a webview for JS execution and DOM access.
 /// Supports both architectures:
 /// - WebviewWindow: returns the webview directly
-/// - Multi-webview: falls back to "preview" label for window "main"
+/// - Multi-webview: falls back to the configured `default_webview_label`
 pub fn get_webview_for_eval<R: Runtime>(app: &AppHandle<R>, label: &str) -> Option<tauri::Webview<R>> {
     // First try WebviewWindow with exact label (returns its inner webview)
     if let Some(ww) = app.get_webview_window(label) {
         return Some(ww.as_ref().clone());
     }
-    // Multi-webview architecture: window "main" has child webview "preview"
-    if label == "main" {
-        if let Some(wv) = app.get_webview("preview") {
-            return Some(wv);
+    // Multi-webview architecture: use the configured fallback webview label
+    if let Some(config) = app.try_state::<WebviewFallbackConfig>() {
+        if let Some(fallback) = &config.label {
+            if let Some(wv) = app.get_webview(fallback) {
+                return Some(wv);
+            }
         }
     }
     // Try direct webview lookup
     app.get_webview(label)
+}
+
+/// Get the emit target label for multi-webview architecture.
+/// If the window label doesn't match a WebviewWindow, falls back to the
+/// configured `default_webview_label` from `PluginConfig`.
+pub fn get_emit_target<R: Runtime>(app: &AppHandle<R>, window_label: &str) -> String {
+    if app.get_webview_window(window_label).is_none() {
+        if let Some(config) = app.try_state::<WebviewFallbackConfig>() {
+            if let Some(fallback) = &config.label {
+                if app.get_webview(fallback).is_some() {
+                    return fallback.to_string();
+                }
+            }
+        }
+    }
+    window_label.to_string()
 }
 
 // ----- Screenshot Utilities -----
@@ -176,6 +201,11 @@ pub fn init<R: Runtime, C: DeserializeOwned>(
     _api: PluginApi<R, C>,
     config: &PluginConfig,
 ) -> crate::Result<TauriMcp<R>> {
+    // Store webview fallback config as managed state for resolution helpers
+    app.manage(WebviewFallbackConfig {
+        label: config.default_webview_label.clone(),
+    });
+
     let socket_server = if config.start_socket_server {
         let mut server = SocketServer::new(app.clone(), config.socket_type.clone());
         server.start()?;

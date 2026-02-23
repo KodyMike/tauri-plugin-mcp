@@ -2,19 +2,9 @@ use serde::{Deserialize, Serialize, Serializer}; // Add Deserialize for parsing 
 use serde_json::Value;
 use std::fmt;
 use std::sync::mpsc;
-use tauri::{AppHandle, Error as TauriError, Listener, Manager, Runtime};
+use tauri::{AppHandle, Error as TauriError, Listener, Runtime};
 
-/// Get the emit target label for multi-webview architecture.
-/// In multi-webview mode, window "main" has webview "preview".
-fn get_emit_target<R: Runtime>(app: &AppHandle<R>, window_label: &str) -> String {
-    if window_label == "main" && app.get_webview_window(window_label).is_none() {
-        // Multi-webview architecture: use "preview" webview label
-        if app.get_webview("preview").is_some() {
-            return "preview".to_string();
-        }
-    }
-    window_label.to_string()
-}
+use crate::desktop::get_emit_target;
 
 // Custom error enum for the get_dom_text command
 #[derive(Debug)] // Add Serialize for the enum itself if it needs to be directly serialized
