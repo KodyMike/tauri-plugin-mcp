@@ -19,6 +19,15 @@ pub struct ScreenshotParams {
 
     /// Application name to look for in window matching
     pub application_name: Option<String>,
+
+    /// Directory to save screenshot file to (for save-to-disk mode)
+    pub output_dir: Option<String>,
+
+    /// If true, save to disk instead of returning inline base64
+    pub save_to_disk: Option<bool>,
+
+    /// If true, generate a small thumbnail for inline use
+    pub thumbnail: Option<bool>,
 }
 
 /// Result of taking a screenshot
@@ -35,6 +44,9 @@ pub struct ScreenshotResult {
 
     /// MIME type of the image
     pub mime_type: Option<String>,
+
+    /// File path if screenshot was saved to disk
+    pub file_path: Option<String>,
 }
 
 // Window manager operation parameters

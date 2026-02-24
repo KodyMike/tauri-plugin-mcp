@@ -26,6 +26,7 @@ pub async fn take_screenshot<R: Runtime>(
                 data: None,
                 success: false,
                 error: Some("Unix screenshot not supported for multi-webview architecture. Use macOS or Windows for native screenshot support.".to_string()),
+                file_path: None,
             });
         }
     };
@@ -75,6 +76,7 @@ pub async fn take_screenshot<R: Runtime>(
                     data: Some("data:image/jpeg;base64,/9j/4AAQSkZJRgABAQEAYABgAAD/2wBDAAUDBAQEAwUEBAQFBQUGBwwIBwcHBw8LCwkMEQ8SEhEPERETFhwXExQaFRERGCEYGh0dHx8fExciJCIeJBweHx7/2wBDAQUFBQcGBw4ICA4eFBEUHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh7/wAARCAABAAEDASIAAhEBAxEB/8QAFQABAQAAAAAAAAAAAAAAAAAAAAb/xAAUEAEAAAAAAAAAAAAAAAAAAAAA/8QAFAEBAAAAAAAAAAAAAAAAAAAAAP/EABQRAQAAAAAAAAAAAAAAAAAAAAD/2gAMAwEAAhEDEQA/ALAKD//Z".to_string()),
                     success: true,
                     error: None,
+                    file_path: None,
                 })
             },
             Err(e) => Err(Error::WindowOperationFailed(format!("Failed to execute screenshot script: {}", e)))

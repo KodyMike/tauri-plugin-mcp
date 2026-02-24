@@ -116,16 +116,25 @@ pub struct TypeTextRequest {
 #[serde(rename_all = "snake_case")]
 pub struct ScreenshotRequest {
     pub window_label: String,
+    pub quality: Option<i32>,
+    pub max_width: Option<i32>,
+    pub max_size_mb: Option<f32>,
+    pub output_dir: Option<String>,
+    pub save_to_disk: Option<bool>,
+    pub thumbnail: Option<bool>,
 }
 
 impl From<ScreenshotRequest> for crate::shared::ScreenshotParams {
     fn from(req: ScreenshotRequest) -> Self {
         Self {
             window_label: Some(req.window_label),
-            quality: None,
-            max_width: None,
-            max_size_mb: None,
+            quality: req.quality,
+            max_width: req.max_width,
+            max_size_mb: req.max_size_mb,
             application_name: None,
+            output_dir: req.output_dir,
+            save_to_disk: req.save_to_disk,
+            thumbnail: req.thumbnail,
         }
     }
 }
@@ -136,6 +145,7 @@ pub struct ScreenshotResponse {
     pub data: Option<String>, // Base64 encoded image
     pub success: bool,
     pub error: Option<String>,
+    pub file_path: Option<String>,
 }
 
 impl From<crate::shared::ScreenshotResult> for ScreenshotResponse {
@@ -144,6 +154,7 @@ impl From<crate::shared::ScreenshotResult> for ScreenshotResponse {
             data: result.data,
             success: result.success,
             error: result.error,
+            file_path: result.file_path,
         }
     }
 }
