@@ -2,7 +2,7 @@ use tauri::{
     Manager, Runtime,
     plugin::{Builder, TauriPlugin},
 };
-use log::info;
+use log::{info, warn};
 
 pub use models::*;
 
@@ -78,6 +78,9 @@ pub struct PluginConfig {
     /// with a different label (e.g., "preview"). Set this to that webview's label so
     /// the plugin knows where to send events and evaluate JS.
     pub default_webview_label: Option<String>,
+    /// Optional auth token for socket server authentication.
+    /// When set, clients must include this token in requests.
+    pub auth_token: Option<String>,
 }
 
 impl PluginConfig {
@@ -88,6 +91,7 @@ impl PluginConfig {
             socket_type: SocketType::default(),
             start_socket_server: true,
             default_webview_label: None,
+            auth_token: None,
         }
     }
 
@@ -114,6 +118,12 @@ impl PluginConfig {
     /// this label is used to find the correct webview for JS evaluation and event emission.
     pub fn default_webview_label(mut self, label: String) -> Self {
         self.default_webview_label = Some(label);
+        self
+    }
+
+    /// Set an auth token for socket server authentication.
+    pub fn auth_token(mut self, token: String) -> Self {
+        self.auth_token = Some(token);
         self
     }
 }
@@ -149,6 +159,10 @@ pub fn init_with_config<R: Runtime>(config: PluginConfig) -> TauriPlugin<R> {
         }
     }
 
+    if config.auth_token.is_none() {
+        warn!("[TAURI_MCP] WARNING: No auth token configured. Socket server is unauthenticated.");
+    }
+
     if config.start_socket_server {
         info!("[TAURI_MCP] Socket server will start automatically");
     } else {
@@ -162,7 +176,7 @@ pub fn init_with_config<R: Runtime>(config: PluginConfig) -> TauriPlugin<R> {
         .setup(move |app, api| {
             info!("[TAURI_MCP] Setting up plugin");
             #[cfg(mobile)]
-            panic!("Mobile is not supported");
+            return Err("Mobile is not supported".into());
             #[cfg(desktop)]
             let tauri_mcp = desktop::init(app, api, &config)?;
             app.manage(tauri_mcp);

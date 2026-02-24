@@ -70,6 +70,7 @@ pub async fn handle_get_local_storage<R: Runtime>(
                     success: false,
                     data: None,
                     error: Some("Key is required for remove operations".to_string()),
+                    id: None,
                 });
             }
         }
@@ -79,6 +80,7 @@ pub async fn handle_get_local_storage<R: Runtime>(
                     success: false,
                     data: None,
                     error: Some("Both key and value are required for set operation".to_string()),
+                    id: None,
                 });
             }
         }
@@ -93,6 +95,7 @@ pub async fn handle_get_local_storage<R: Runtime>(
                     "Unsupported localStorage action: {}",
                     params.action
                 )),
+                id: None,
             });
         }
     };
@@ -117,11 +120,13 @@ pub async fn handle_get_local_storage<R: Runtime>(
                     .map_err(|e| Error::Anyhow(format!("Failed to serialize response: {}", e)))?,
             ),
             error: None,
+            id: None,
         }),
         Err(e) => Ok(SocketResponse {
             success: false,
             data: None,
             error: Some(e.to_string()),
+            id: None,
         }),
     }
 }

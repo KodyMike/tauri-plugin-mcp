@@ -28,15 +28,72 @@ export class TauriSocketClient {
   private responseCallbacks: Map<string, { resolve: (value: any) => void, reject: (reason: any) => void }> = new Map();
   private buffer = '';
   private reconnectAttempts = 0;
+  private authToken: string | undefined;
 
   constructor(config?: ConnectionConfig) {
     // Default to IPC with default path
     this.config = config || { type: 'ipc', path: DEFAULT_SOCKET_PATH };
   }
 
+  /**
+   * Returns the effective IPC connection path, applying Windows named-pipe
+   * rewriting when necessary. Used by both connect() and token discovery so
+   * they always agree on the path.
+   */
+  private getEffectiveIpcPath(): string {
+    if (this.config.type !== 'ipc') {
+      throw new Error('getEffectiveIpcPath called on non-IPC config');
+    }
+    let connectionPath = this.config.path || DEFAULT_SOCKET_PATH;
+    if (os.platform() === 'win32') {
+      connectionPath = `\\\\.\\pipe\\tmp\\${SOCKET_FILENAME}`;
+    }
+    return connectionPath;
+  }
+
+  /**
+   * Resolves the auth token from env var or .token file.
+   * Called on every connect() so that tokens written after MCP startup
+   * are picked up without restarting the process.
+   */
+  private resolveAuthToken(): string | undefined {
+    // First check environment variable
+    const envToken = process.env.TAURI_MCP_AUTH_TOKEN;
+    if (envToken) {
+      return envToken;
+    }
+
+    // Then try to read from token file, using the effective connection path
+    try {
+      let tokenPath: string;
+      if (this.config.type === 'tcp') {
+        tokenPath = `${os.tmpdir()}/tauri-mcp-${this.config.port}.token`;
+      } else {
+        const socketPath = this.getEffectiveIpcPath();
+        tokenPath = `${socketPath}.token`;
+      }
+      if (fs.existsSync(tokenPath)) {
+        const token = fs.readFileSync(tokenPath, 'utf-8').trim();
+        if (token) {
+          console.error(`Auth token loaded from ${tokenPath}`);
+          return token;
+        }
+      }
+    } catch (e) {
+      // Token file not found or unreadable, proceed without auth
+    }
+
+    return undefined;
+  }
+
   async connect(): Promise<void> {
     if (this.isConnected) return;
-    
+
+    // Re-resolve auth token on every connect attempt so that tokens
+    // written after MCP startup (e.g. by a Tauri app starting later)
+    // are picked up without restarting the MCP process.
+    this.authToken = this.resolveAuthToken();
+
     return new Promise((resolve, reject) => {
       let connectionOptions: net.NetConnectOpts;
       let connectionInfo: string;
@@ -49,15 +106,8 @@ export class TauriSocketClient {
         };
         connectionInfo = `TCP ${this.config.host}:${this.config.port}`;
       } else {
-        // IPC connection
-        let connectionPath = this.config.path || DEFAULT_SOCKET_PATH;
-        
-        // On Windows, the socket is created as a named pipe in a specific location
-        if (os.platform() === 'win32') {
-          connectionPath = `\\\\.\\pipe\\tmp\\${SOCKET_FILENAME}`;
-          console.error(`Using Windows-specific pipe path: ${connectionPath}`);
-        }
-        
+        // IPC connection — use the shared effective path
+        const connectionPath = this.getEffectiveIpcPath();
         connectionOptions = { path: connectionPath };
         connectionInfo = `IPC ${connectionPath}`;
       }
@@ -117,21 +167,28 @@ export class TauriSocketClient {
       
       try {
         const response = JSON.parse(jsonStr);
-        
-        // Process all matching callbacks that might be waiting for this response
-        // Rather than just taking the first one, match based on timestamps (oldest first)
-        const callbackIds = Array.from(this.responseCallbacks.keys());
-        
-        if (callbackIds.length > 0) {
-          // Sort by timestamp (assuming IDs start with timestamp)
-          callbackIds.sort();
-          const callbackId = callbackIds[0];
-          
+
+        // Match response to request by ID, with FIFO fallback for backward compatibility
+        let callbackId: string | undefined;
+
+        if (response.id && this.responseCallbacks.has(response.id)) {
+          // Direct match by request ID
+          callbackId = response.id;
+        } else {
+          // FIFO fallback: oldest pending request (sorted by timestamp prefix)
+          const callbackIds = Array.from(this.responseCallbacks.keys());
+          if (callbackIds.length > 0) {
+            callbackIds.sort();
+            callbackId = callbackIds[0];
+          }
+        }
+
+        if (callbackId) {
           const callback = this.responseCallbacks.get(callbackId);
           if (callback) {
             // Remove the callback before invoking to prevent double calls
             this.responseCallbacks.delete(callbackId);
-            
+
             if (!response.success) {
               // If the server indicates failure, reject the promise with the error message
               const errorMsg = response.error || 'Command failed without specific error';
@@ -198,13 +255,16 @@ export class TauriSocketClient {
         finalPayload = payload;
       }
       
-      const request = JSON.stringify({
-        command,
-        payload: finalPayload
-      }) + '\n';
-
       // Generate a unique ID for this request including timestamp for ordering
       const requestId = Date.now().toString() + Math.random().toString(36).substring(2);
+
+      const request = JSON.stringify({
+        command,
+        payload: finalPayload,
+        id: requestId,
+        ...(this.authToken ? { authToken: this.authToken } : {})
+      }) + '\n';
+
       this.responseCallbacks.set(requestId, { resolve, reject });
 
       // Log the request

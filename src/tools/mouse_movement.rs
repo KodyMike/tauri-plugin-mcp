@@ -170,10 +170,6 @@ pub fn simulate_mouse_movement_shared<R: Runtime>(
     app: &AppHandle<R>,
     params: MouseMovementParams,
 ) -> std::result::Result<MouseMovementResult, String> {
-    // Create runtime for async code
-    let rt =
-        tokio::runtime::Runtime::new().map_err(|e| format!("Failed to create runtime: {}", e))?;
-
     // Convert shared params to internal type
     let request = MouseMovementRequest {
         x: params.x,
@@ -183,8 +179,9 @@ pub fn simulate_mouse_movement_shared<R: Runtime>(
         button: params.button,
     };
 
-    // Run async method
-    let result = rt.block_on(simulate_mouse_movement_async(app, request));
+    // Run async method using existing Tokio runtime
+    let result = tokio::runtime::Handle::current()
+        .block_on(simulate_mouse_movement_async(app, request));
 
     // Convert result to shared type
     match result {
@@ -222,12 +219,14 @@ pub async fn handle_simulate_mouse_movement<R: Runtime>(
                 success: true,
                 data: Some(data),
                 error: None,
+                id: None,
             })
         }
         Err(e) => Ok(SocketResponse {
             success: false,
             data: None,
             error: Some(e.to_string()),
+            id: None,
         }),
     }
 }
