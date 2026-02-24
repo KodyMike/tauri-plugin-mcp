@@ -8,6 +8,7 @@ use crate::socket_server::SocketResponse;
 // Export command modules
 pub mod app_info;
 pub mod cookies;
+#[cfg(feature = "devtools")]
 pub mod devtools;
 pub mod events;
 pub mod execute_js;
@@ -26,6 +27,7 @@ pub mod zoom;
 // Re-export command handler functions
 pub use app_info::handle_get_app_info;
 pub use cookies::handle_manage_cookies;
+#[cfg(feature = "devtools")]
 pub use devtools::handle_manage_devtools;
 pub use events::handle_manage_events;
 pub use execute_js::handle_execute_js;
@@ -80,7 +82,15 @@ pub async fn handle_command<R: Runtime>(
         commands::NAVIGATE_WEBVIEW => handle_navigate_webview(app, payload).await,
         commands::MANAGE_EVENTS => handle_manage_events(app, payload).await,
         commands::MANAGE_COOKIES => handle_manage_cookies(app, payload).await,
+        #[cfg(feature = "devtools")]
         commands::MANAGE_DEVTOOLS => handle_manage_devtools(app, payload).await,
+        #[cfg(not(feature = "devtools"))]
+        commands::MANAGE_DEVTOOLS => Ok(SocketResponse {
+            success: false,
+            data: None,
+            error: Some("manage_devtools requires the 'devtools' feature: tauri-plugin-mcp = { features = [\"devtools\"] }".to_string()),
+            id: None,
+        }),
         commands::MANAGE_ZOOM => handle_manage_zoom(app, payload).await,
         commands::MANAGE_WEBVIEW_STATE => handle_manage_webview_state(app, payload).await,
         _ => Ok(SocketResponse {

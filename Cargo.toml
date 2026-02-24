@@ -33,6 +33,10 @@ xcap = "0.0.4"
 [target.'cfg(target_os = "windows")'.dependencies]
 win-screenshot = "4.0.5"
 
+[features]
+default = []
+devtools = ["tauri/devtools"]
+
 [build-dependencies]
 tauri-plugin = { version = "2.5", features = ["build"] }
 
