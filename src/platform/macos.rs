@@ -11,10 +11,9 @@ use core_graphics::display::{
 use core_graphics::base::CGFloat;
 
 // Import shared functionality
-use crate::desktop::{ScreenshotContext, create_success_response};
-use crate::platform::shared::{get_window_title_from_handle, handle_screenshot_task};
+use crate::desktop::ScreenshotContext;
+use crate::platform::shared::{finalize_screenshot, get_window_title_from_handle, handle_screenshot_task};
 use crate::shared::ScreenshotParams;
-use crate::tools::take_screenshot::process_image;
 
 /// Window info extracted from CGWindowListCopyWindowInfo
 #[derive(Debug, Clone)]
@@ -228,8 +227,7 @@ pub async fn take_screenshot<R: Runtime>(
                   image.width(), image.height());
 
             let dynamic_image = image::DynamicImage::ImageRgba8(image);
-            return process_image(dynamic_image, &params_clone)
-                .map(create_success_response);
+            return finalize_screenshot(dynamic_image, &params_clone);
         }
 
         // xcap didn't find it - try using CGWindowListCopyWindowInfo with kCGWindowListOptionAll
@@ -251,8 +249,7 @@ pub async fn take_screenshot<R: Runtime>(
                   image.width(), image.height());
 
             let dynamic_image = image::DynamicImage::ImageRgba8(image);
-            return process_image(dynamic_image, &params_clone)
-                .map(create_success_response);
+            return finalize_screenshot(dynamic_image, &params_clone);
         }
 
         // Check if it's a permissions issue

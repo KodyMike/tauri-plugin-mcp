@@ -182,6 +182,7 @@ pub fn create_success_response(data_url: String) -> ScreenshotResponse {
         data: Some(data_url),
         success: true,
         error: None,
+        file_path: None,
     }
 }
 
@@ -191,6 +192,7 @@ pub fn create_error_response(error_msg: String) -> ScreenshotResponse {
         data: None,
         success: false,
         error: Some(error_msg),
+        file_path: None,
     }
 }
 
@@ -249,10 +251,13 @@ impl<R: Runtime> TauriMcp<R> {
         // Create shared parameters struct from the request
         let params = ScreenshotParams {
             window_label: Some(window_label),
-            quality: None,
-            max_width: None,
-            max_size_mb: None,
+            quality: payload.quality,
+            max_width: payload.max_width,
+            max_size_mb: payload.max_size_mb,
             application_name: Some(self.application_name.clone()),
+            output_dir: payload.output_dir,
+            save_to_disk: payload.save_to_disk,
+            thumbnail: payload.thumbnail,
         };
 
         // Create a context with the window handle for platform implementation
@@ -448,7 +453,15 @@ impl<R: Runtime> McpInterface for TauriMcp<R> {
         // Create a ScreenshotRequest from our interface params
         let window_label = params.window_label.unwrap_or_else(|| "main".to_string());
 
-        let request = ScreenshotRequest { window_label };
+        let request = ScreenshotRequest {
+            window_label,
+            quality: params.quality,
+            max_width: params.max_width,
+            max_size_mb: params.max_size_mb,
+            output_dir: params.output_dir,
+            save_to_disk: params.save_to_disk,
+            thumbnail: params.thumbnail,
+        };
         match futures::executor::block_on(self.take_screenshot_async(request)) {
             Ok(response) => {
                 // Convert to the shared result type
@@ -457,6 +470,7 @@ impl<R: Runtime> McpInterface for TauriMcp<R> {
                     error: response.error,
                     data: response.data,
                     mime_type: Some("image/jpeg".to_string()),
+                    file_path: response.file_path,
                 })
             }
             Err(err) => {

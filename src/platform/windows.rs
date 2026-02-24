@@ -6,10 +6,9 @@ use tauri::Runtime;
 use win_screenshot::prelude::*;
 
 // Import shared functionality
-use crate::desktop::{ScreenshotContext, create_success_response};
-use crate::platform::shared::{get_window_title_from_handle, handle_screenshot_task};
+use crate::desktop::ScreenshotContext;
+use crate::platform::shared::{finalize_screenshot, get_window_title_from_handle, handle_screenshot_task};
 use crate::shared::ScreenshotParams;
-use crate::tools::take_screenshot::process_image;
 
 // Windows-specific implementation for taking screenshots
 pub async fn take_screenshot<R: Runtime>(
@@ -79,10 +78,7 @@ pub async fn take_screenshot<R: Runtime>(
       );
       
       // Process the image
-      match process_image(dynamic_image, &params_clone) {
-        Ok(data_url) => Ok(create_success_response(data_url)),
-        Err(e) => Err(e),
-      }
+      finalize_screenshot(dynamic_image, &params_clone)
     } else {
       // No window found at all
       Err(Error::WindowOperationFailed("Window not found using any detection method. Please ensure the window is visible and not minimized.".to_string()))

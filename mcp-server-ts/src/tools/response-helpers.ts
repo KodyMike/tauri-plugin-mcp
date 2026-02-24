@@ -2,6 +2,8 @@
  * Common response helper functions for MCP tool implementations
  */
 
+import path from "path";
+
 /**
  * Creates a standardized error response
  * 
@@ -44,6 +46,106 @@ export function createImageResponse(base64Data: string, mimeType: string = 'imag
       mimeType
     }],
   };
+}
+
+/**
+ * Content annotations for MCP responses (audience hints, priority)
+ */
+export interface ContentAnnotations {
+  audience?: ("user" | "assistant")[];
+  priority?: number;
+}
+
+/**
+ * Creates a success response with image content and optional annotations
+ *
+ * @param base64Data Base64-encoded image data
+ * @param mimeType MIME type of the image (default: 'image/jpeg')
+ * @param annotations Optional audience/priority annotations
+ * @returns Properly formatted success response with annotated image
+ */
+export function createAnnotatedImageResponse(
+  base64Data: string,
+  mimeType: string = "image/jpeg",
+  annotations?: ContentAnnotations
+) {
+  const content: any = {
+    type: "image" as const,
+    data: base64Data,
+    mimeType,
+  };
+  if (annotations) {
+    content.annotations = annotations;
+  }
+  return {
+    isError: false,
+    content: [content],
+  };
+}
+
+/**
+ * Creates an embedded resource response pointing to a file on disk.
+ * Uses file:// URI for cross-platform correctness.
+ *
+ * @param filePath Absolute path to the file
+ * @param mimeType MIME type of the resource (default: 'image/jpeg')
+ * @returns Properly formatted response with embedded resource
+ */
+export function createEmbeddedResourceResponse(
+  filePath: string,
+  mimeType: string = "image/jpeg"
+) {
+  // Resolve relative paths to absolute before forming URI
+  const absolutePath = path.isAbsolute(filePath)
+    ? filePath
+    : path.resolve(filePath);
+
+  // Convert path to file:// URI (cross-platform)
+  const fileUri = absolutePath.startsWith("/")
+    ? `file://${absolutePath}`
+    : `file:///${absolutePath.replace(/\\/g, "/")}`;
+
+  return {
+    isError: false,
+    content: [
+      {
+        type: "resource" as const,
+        resource: {
+          uri: fileUri,
+          mimeType,
+          text: `Screenshot saved to: ${absolutePath}`,
+        },
+      },
+    ],
+  };
+}
+
+/**
+ * Extract file_path from a result object if present
+ *
+ * @param result Result object from command
+ * @returns File path string or null
+ */
+export function extractFilePath(result: unknown): string | null {
+  if (result && typeof result === "object") {
+    const obj = result as Record<string, any>;
+    if (obj.filePath && typeof obj.filePath === "string") {
+      return obj.filePath;
+    }
+    if (obj.file_path && typeof obj.file_path === "string") {
+      return obj.file_path;
+    }
+    // Check nested data
+    if (obj.data && typeof obj.data === "object") {
+      if (obj.data.filePath && typeof obj.data.filePath === "string") {
+        return obj.data.filePath;
+      }
+      if (obj.data.file_path && typeof obj.data.file_path === "string") {
+        return obj.data.file_path;
+      }
+    }
+  }
+  return null;
 }
 
 /**
