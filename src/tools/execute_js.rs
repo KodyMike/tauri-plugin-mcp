@@ -15,7 +15,7 @@ pub struct ExecuteJsRequest {
 
 #[derive(Debug, serde::Serialize, serde::Deserialize)]
 pub struct ExecuteJsResponse {
-    result: String,
+    result: Value,
     #[serde(rename = "type")]
     result_type: String,
 }
@@ -35,7 +35,7 @@ pub async fn handle_execute_js<R: Runtime>(
     let _webview = crate::desktop::get_webview_for_eval(app, &window_label)
         .ok_or_else(|| Error::Anyhow(format!("Webview not found: {}", window_label)))?;
 
-    let timeout_ms = request.timeout_ms.unwrap_or(5000);
+    let timeout_ms = request.timeout_ms.unwrap_or(30000);
     let emit_target = get_emit_target(app, &window_label);
 
     // Use emit_and_wait with correlation ID (fixes previous emit-before-listen race)
@@ -46,11 +46,12 @@ pub async fn handle_execute_js<R: Runtime>(
         "execute-js-response",
         serde_json::json!(request.code),
         std::time::Duration::from_millis(timeout_ms),
-    ).await {
+    )
+    .await
+    {
         Ok(result_string) => {
-            let response: Value = serde_json::from_str(&result_string).map_err(|e| {
-                Error::Anyhow(format!("Failed to parse JS response: {}", e))
-            })?;
+            let response: Value = serde_json::from_str(&result_string)
+                .map_err(|e| Error::Anyhow(format!("Failed to parse JS response: {}", e)))?;
 
             if let Some(error) = response.get("error").and_then(|v| v.as_str()) {
                 return Ok(SocketResponse {
@@ -61,11 +62,10 @@ pub async fn handle_execute_js<R: Runtime>(
                 });
             }
 
-            let result = response
+            let result_str = response
                 .get("result")
                 .and_then(|r| r.as_str())
-                .unwrap_or("[Result could not be stringified]")
-                .to_string();
+                .unwrap_or("[Result could not be stringified]");
 
             let result_type = response
                 .get("type")
@@ -73,8 +73,21 @@ pub async fn handle_execute_js<R: Runtime>(
                 .unwrap_or("unknown")
                 .to_string();
 
+            let is_json = response
+                .get("isJson")
+                .and_then(|j| j.as_bool())
+                .unwrap_or(false);
+
+            // If JS side marked it as JSON, parse it to avoid double-encoding
+            let result_value = if is_json {
+                serde_json::from_str(result_str)
+                    .unwrap_or_else(|_| Value::String(result_str.to_string()))
+            } else {
+                Value::String(result_str.to_string())
+            };
+
             let data = serde_json::to_value(ExecuteJsResponse {
-                result,
+                result: result_value,
                 result_type,
             })
             .map_err(|e| Error::Anyhow(format!("Failed to serialize response: {}", e)))?;

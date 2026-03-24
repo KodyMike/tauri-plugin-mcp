@@ -1369,23 +1369,34 @@ async function handleJsExecutionRequest(event: any) {
     console.log('TAURI-PLUGIN-MCP: Received execute-js, payload:', event.payload);
     const correlationId = getCorrelationId(event.payload);
 
+    // Dedup guard: skip if this correlation ID was already handled
+    if (correlationId && _handledCorrelationIds.has(correlationId)) {
+        console.warn('TAURI-PLUGIN-MCP: Ignoring duplicate execute-js for correlation ID:', correlationId);
+        return;
+    }
+    if (correlationId) {
+        _handledCorrelationIds.add(correlationId);
+        setTimeout(() => _handledCorrelationIds.delete(correlationId), 30000);
+    }
+
     try {
         // Extract the code to execute — may be wrapped in _payload by emit_and_wait
         const code = (typeof event.payload === 'object' && event.payload._payload !== undefined)
             ? event.payload._payload
             : event.payload;
 
-        // Execute the code
-        const result = executeJavaScript(code);
+        // Execute the code (async — supports Promises and top-level await)
+        const result = await executeJavaScript(code);
 
-        // Prepare response with result and type information
-        const response = {
-            result: typeof result === 'object' ? JSON.stringify(result) : String(result),
-            type: typeof result
-        };
+        // Serialize safely with rich type info
+        const { serialized, type, isJson } = safeSerialize(result);
 
         // Send back the result
-        await emitResponse('execute-js-response', correlationId, response);
+        await emitResponse('execute-js-response', correlationId, {
+            result: serialized,
+            type,
+            isJson
+        });
         console.log('TAURI-PLUGIN-MCP: Emitted execute-js-response');
     } catch (error) {
         console.error('TAURI-PLUGIN-MCP: Error executing JavaScript:', error);
@@ -1401,17 +1412,115 @@ async function handleJsExecutionRequest(event: any) {
     }
 }
 
-// Function to safely execute JavaScript code
-function executeJavaScript(code: string): any {
-    // Using Function constructor is slightly safer than eval
-    // It runs in global scope rather than local scope
-    try {
-        // For expressions, return the result
-        return new Function(`return (${code})`)();
-    } catch {
-        // If that fails, try executing as statements
-        return new Function(code)();
+// Detect rich type beyond basic typeof
+function detectType(value: any): string {
+    if (value === null) return 'null';
+    if (value === undefined) return 'undefined';
+    if (Array.isArray(value)) return 'array';
+    if (value instanceof Date) return 'date';
+    if (value instanceof RegExp) return 'regexp';
+    if (value instanceof Error) return 'error';
+    if (value instanceof Map) return 'map';
+    if (value instanceof Set) return 'set';
+    if (value instanceof Promise) return 'promise';
+    if (typeof value === 'function') return 'function';
+    if (typeof value === 'bigint') return 'bigint';
+    if (typeof value === 'symbol') return 'symbol';
+    return typeof value; // string, number, boolean, object
+}
+
+// JSON.stringify with circular reference protection
+function safeStringify(obj: any): string {
+    const seen = new WeakSet();
+    return JSON.stringify(obj, (_key, value) => {
+        if (typeof value === 'object' && value !== null) {
+            if (seen.has(value)) return '[Circular]';
+            seen.add(value);
+        }
+        return value;
+    });
+}
+
+// Serialize any JS value into {serialized, type, isJson} for transport
+function safeSerialize(value: any): { serialized: string; type: string; isJson: boolean } {
+    const type = detectType(value);
+
+    switch (type) {
+        case 'undefined':
+            return { serialized: 'undefined', type, isJson: false };
+        case 'null':
+            return { serialized: 'null', type, isJson: false };
+        case 'string':
+            return { serialized: value, type, isJson: false };
+        case 'number':
+        case 'boolean':
+            return { serialized: String(value), type, isJson: false };
+        case 'bigint':
+            return { serialized: value.toString(), type, isJson: false };
+        case 'symbol':
+            return { serialized: value.toString(), type, isJson: false };
+        case 'function':
+            return { serialized: value.toString().slice(0, 500), type, isJson: false };
+        case 'regexp':
+            return { serialized: value.toString(), type, isJson: false };
+        case 'date':
+            return { serialized: value.toISOString(), type, isJson: false };
+        case 'error':
+            return { serialized: safeStringify({ name: value.name, message: value.message, stack: value.stack }), type, isJson: true };
+        case 'map':
+            return { serialized: safeStringify(Object.fromEntries(value)), type, isJson: true };
+        case 'set':
+            return { serialized: safeStringify(Array.from(value)), type, isJson: true };
+        case 'array':
+            return { serialized: safeStringify(value), type, isJson: true };
+        default: // object
+            return { serialized: safeStringify(value), type, isJson: true };
     }
+}
+
+// Execute JavaScript code — uses indirect eval for completion-value semantics
+// (0, eval)(code) returns the value of the last expression, unlike new Function()
+async function executeJavaScript(code: string): Promise<any> {
+    let result;
+    try {
+        // Indirect eval in global scope — returns completion value of last expression
+        // e.g. eval("var x = 5; x.toString()") → "5"
+        result = (0, eval)(code);
+    } catch (err) {
+        // If SyntaxError and code contains `await`, wrap in async context
+        if (err instanceof SyntaxError && /\bawait\b/.test(code)) {
+            result = await evalAsync(code);
+        } else {
+            throw err;
+        }
+    }
+
+    // Auto-await any thenable (Promises, fetch results, etc.)
+    if (result != null && typeof result === 'object' && typeof result.then === 'function') {
+        result = await result;
+    }
+    return result;
+}
+
+// Wrap code containing top-level `await` in an async IIFE with auto-return
+function evalAsync(code: string): Promise<any> {
+    const lines = code.split('\n');
+    // Find last non-empty, non-comment line that looks like an expression
+    let lastIdx = -1;
+    for (let i = lines.length - 1; i >= 0; i--) {
+        const trimmed = lines[i].trim();
+        if (!trimmed || trimmed.startsWith('//')) continue;
+        // Stop if last meaningful line is a statement keyword — no auto-return
+        if (/^(var|let|const|if|for|while|do|switch|try|throw|return|class|function|import|export)\b/.test(trimmed)) break;
+        lastIdx = i;
+        break;
+    }
+    // Prepend `return` to last expression line so the async IIFE returns it
+    if (lastIdx >= 0 && !lines[lastIdx].trimStart().startsWith('return')) {
+        lines[lastIdx] = lines[lastIdx].replace(/^(\s*)/, '$1return ');
+    }
+    const wrapped = `(async () => {\n${lines.join('\n')}\n})()`;
+    return (0, eval)(wrapped);
 }
 
 async function handleSendTextToElementRequest(event: any) {

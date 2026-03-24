@@ -5,11 +5,11 @@ use crate::shared::ScreenshotParams;
 use crate::socket_server::SocketServer;
 use crate::tools::mouse_movement;
 use crate::{PluginConfig, Result};
+use log::info;
 use serde::de::DeserializeOwned;
 use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
 use tauri::{AppHandle, Manager, Runtime, plugin::PluginApi};
-use log::info;
 
 // ----- Webview Fallback Config -----
 
@@ -76,7 +76,10 @@ impl<R: Runtime> WindowHandle<R> {
         }
     }
 
-    pub fn set_position(&self, pos: tauri::LogicalPosition<f64>) -> std::result::Result<(), tauri::Error> {
+    pub fn set_position(
+        &self,
+        pos: tauri::LogicalPosition<f64>,
+    ) -> std::result::Result<(), tauri::Error> {
         match self {
             WindowHandle::WebviewWindow(w) => w.set_position(pos),
             WindowHandle::Window(w) => w.set_position(pos),
@@ -113,15 +116,31 @@ impl<R: Runtime> WindowHandle<R> {
 }
 
 /// Get a window handle by label, supporting both WebviewWindow and Window architectures.
-/// First tries get_webview_window, then falls back to get_window.
+/// First tries exact label match, then falls back to matching by window title.
 pub fn get_window_handle<R: Runtime>(app: &AppHandle<R>, label: &str) -> Option<WindowHandle<R>> {
-    // First try WebviewWindow (combined window+webview)
+    // First try WebviewWindow by exact label (combined window+webview)
     if let Some(ww) = app.get_webview_window(label) {
         return Some(WindowHandle::WebviewWindow(ww));
     }
-    // Fall back to separate Window (multi-webview architecture)
+    // Try separate Window by exact label (multi-webview architecture)
     if let Some(w) = app.get_window(label) {
         return Some(WindowHandle::Window(w));
+    }
+    // Fall back to matching by window title (case-insensitive)
+    let label_lower = label.to_lowercase();
+    for ww in app.webview_windows().values() {
+        if let Ok(title) = ww.title() {
+            if title.to_lowercase() == label_lower || title.to_lowercase().contains(&label_lower) {
+                return Some(WindowHandle::WebviewWindow(ww.clone()));
+            }
+        }
+    }
+    for w in app.windows().values() {
+        if let Ok(title) = w.title() {
+            if title.to_lowercase() == label_lower || title.to_lowercase().contains(&label_lower) {
+                return Some(WindowHandle::Window(w.clone()));
+            }
+        }
     }
     None
 }
@@ -130,7 +149,11 @@ pub fn get_window_handle<R: Runtime>(app: &AppHandle<R>, label: &str) -> Option<
 /// Supports both architectures:
 /// - WebviewWindow: returns the webview directly
 /// - Multi-webview: falls back to the configured `default_webview_label`
-pub fn get_webview_for_eval<R: Runtime>(app: &AppHandle<R>, label: &str) -> Option<tauri::Webview<R>> {
+/// Also falls back to matching by window title if exact label fails.
+pub fn get_webview_for_eval<R: Runtime>(
+    app: &AppHandle<R>,
+    label: &str,
+) -> Option<tauri::Webview<R>> {
     // First try WebviewWindow with exact label (returns its inner webview)
     if let Some(ww) = app.get_webview_window(label) {
         return Some(ww.as_ref().clone());
@@ -144,7 +167,19 @@ pub fn get_webview_for_eval<R: Runtime>(app: &AppHandle<R>, label: &str) -> Opti
         }
     }
     // Try direct webview lookup
-    app.get_webview(label)
+    if let Some(wv) = app.get_webview(label) {
+        return Some(wv);
+    }
+    // Fall back to matching by window title (case-insensitive)
+    let label_lower = label.to_lowercase();
+    for ww in app.webview_windows().values() {
+        if let Ok(title) = ww.title() {
+            if title.to_lowercase() == label_lower || title.to_lowercase().contains(&label_lower) {
+                return Some(ww.as_ref().clone());
+            }
+        }
+    }
+    None
 }
 
 /// Get the emit target label for multi-webview architecture.
@@ -207,7 +242,11 @@ pub fn init<R: Runtime, C: DeserializeOwned>(
     app.manage(crate::native_input::state::VirtualCursorState::new());
 
     let socket_server = if config.start_socket_server {
-        let mut server = SocketServer::new(app.clone(), config.socket_type.clone(), config.auth_token.clone());
+        let mut server = SocketServer::new(
+            app.clone(),
+            config.socket_type.clone(),
+            config.auth_token.clone(),
+        );
         server.start()?;
         Some(Arc::new(Mutex::new(server)))
     } else {
@@ -259,9 +298,7 @@ impl<R: Runtime> TauriMcp<R> {
         };
 
         // Create a context with the window handle for platform implementation
-        let window_context = ScreenshotContext {
-            window_handle,
-        };
+        let window_context = ScreenshotContext { window_handle };
 
         info!("[TAURI_MCP] Taking screenshot with default parameters");
 
@@ -435,4 +472,3 @@ impl<R: Runtime> Drop for TauriMcp<R> {
         }
     }
 }
-
