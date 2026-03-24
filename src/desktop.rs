@@ -274,7 +274,8 @@ impl<R: Runtime> TauriMcp<R> {
         })
     }
 
-    // Take screenshot - this feature depends on Tauri's window capabilities
+    // Take screenshot - this feature depends on Tauri's window capabilities.
+    // On Linux, falls back to webview-based JS capture if xcap fails.
     pub async fn take_screenshot_async(
         &self,
         payload: ScreenshotRequest,
@@ -287,7 +288,7 @@ impl<R: Runtime> TauriMcp<R> {
 
         // Create shared parameters struct from the request
         let params = ScreenshotParams {
-            window_label: Some(window_label),
+            window_label: Some(window_label.clone()),
             quality: payload.quality,
             max_width: payload.max_width,
             max_size_mb: payload.max_size_mb,
@@ -303,7 +304,149 @@ impl<R: Runtime> TauriMcp<R> {
         info!("[TAURI_MCP] Taking screenshot with default parameters");
 
         // Use platform-specific implementation to capture the window
-        crate::platform::current::take_screenshot(params, window_context).await
+        let result = crate::platform::current::take_screenshot(params.clone(), window_context).await;
+
+        // On Linux, if xcap failed, fall back to JS-based webview capture
+        #[cfg(target_os = "linux")]
+        if let Err(ref _e) = result {
+            info!("[TAURI_MCP] xcap screenshot failed, trying JS-based webview capture fallback");
+            if let Some(fallback) = self.take_screenshot_via_js(&window_label, &params).await {
+                return Ok(fallback);
+            }
+        }
+
+        result
+    }
+
+    /// Fallback: capture screenshot via JavaScript in the webview.
+    /// Uses canvas toDataURL to capture the visible page content.
+    #[cfg(target_os = "linux")]
+    async fn take_screenshot_via_js(
+        &self,
+        window_label: &str,
+        params: &ScreenshotParams,
+    ) -> Option<ScreenshotResponse> {
+        use crate::tools::webview::emit_and_wait;
+        use base64::Engine;
+
+        let emit_target = get_emit_target(&self.app, window_label);
+        let quality = params.quality.unwrap_or(70);
+        let max_width = params.max_width.unwrap_or(1400);
+
+        // JS code that captures the visible viewport as a JPEG data URL
+        let js_code = format!(
+            r#"(async () => {{
+                const w = document.documentElement.scrollWidth;
+                const h = document.documentElement.scrollHeight;
+                const vw = window.innerWidth;
+                const vh = window.innerHeight;
+                const canvas = document.createElement('canvas');
+                const scale = Math.min(1, {max_width} / vw);
+                canvas.width = Math.round(vw * scale);
+                canvas.height = Math.round(vh * scale);
+                const ctx = canvas.getContext('2d');
+                ctx.scale(scale, scale);
+                // Render all visible elements by cloning DOM into SVG foreignObject
+                const html = document.documentElement.outerHTML;
+                const blob = new Blob([`
+                    <svg xmlns="http://www.w3.org/2000/svg" width="${{vw}}" height="${{vh}}">
+                        <foreignObject width="100%" height="100%">
+                            ${{new XMLSerializer().serializeToString(document.documentElement)}}
+                        </foreignObject>
+                    </svg>
+                `], {{type: 'image/svg+xml'}});
+                const url = URL.createObjectURL(blob);
+                const img = new Image();
+                await new Promise((resolve, reject) => {{
+                    img.onload = resolve;
+                    img.onerror = reject;
+                    img.src = url;
+                }});
+                ctx.drawImage(img, 0, 0);
+                URL.revokeObjectURL(url);
+                return canvas.toDataURL('image/jpeg', {quality_f});
+            }})()"#,
+            max_width = max_width,
+            quality_f = quality as f64 / 100.0
+        );
+
+        let result = emit_and_wait(
+            &self.app,
+            &emit_target,
+            "execute-js",
+            "execute-js-response",
+            serde_json::json!(js_code),
+            Duration::from_secs(15),
+        )
+        .await;
+
+        match result {
+            Ok(response_str) => {
+                let response: serde_json::Value =
+                    serde_json::from_str(&response_str).ok()?;
+                let data_url = response.get("result")?.as_str()?;
+
+                if !data_url.starts_with("data:image/") {
+                    info!("[TAURI_MCP] JS fallback returned non-image data");
+                    return None;
+                }
+
+                info!("[TAURI_MCP] JS-based screenshot captured successfully");
+
+                let save_to_disk = params.save_to_disk.unwrap_or(false);
+                let thumbnail = params.thumbnail.unwrap_or(false);
+
+                if save_to_disk {
+                    // Extract base64 and save to file
+                    let b64 = data_url.split(',').nth(1)?;
+                    let bytes = base64::engine::general_purpose::STANDARD
+                        .decode(b64)
+                        .ok()?;
+
+                    let output_dir = params.output_dir.clone().unwrap_or_else(|| {
+                        std::env::temp_dir()
+                            .join("tauri-mcp-screenshots")
+                            .to_string_lossy()
+                            .to_string()
+                    });
+                    std::fs::create_dir_all(&output_dir).ok()?;
+                    let timestamp = std::time::SystemTime::now()
+                        .duration_since(std::time::UNIX_EPOCH)
+                        .unwrap_or_default()
+                        .as_millis();
+                    let file_path = format!("{}/screenshot_{}.jpg", output_dir, timestamp);
+                    std::fs::write(&file_path, &bytes).ok()?;
+
+                    if thumbnail {
+                        // Return both file path and thumbnail inline
+                        Some(ScreenshotResponse {
+                            data: Some(data_url.to_string()),
+                            success: true,
+                            error: None,
+                            file_path: Some(file_path),
+                        })
+                    } else {
+                        Some(ScreenshotResponse {
+                            data: None,
+                            success: true,
+                            error: None,
+                            file_path: Some(file_path),
+                        })
+                    }
+                } else {
+                    Some(ScreenshotResponse {
+                        data: Some(data_url.to_string()),
+                        success: true,
+                        error: None,
+                        file_path: None,
+                    })
+                }
+            }
+            Err(e) => {
+                info!("[TAURI_MCP] JS-based screenshot fallback also failed: {}", e);
+                None
+            }
+        }
     }
 
     // Add async method to perform window operations
