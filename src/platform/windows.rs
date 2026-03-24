@@ -7,7 +7,9 @@ use win_screenshot::prelude::*;
 
 // Import shared functionality
 use crate::desktop::ScreenshotContext;
-use crate::platform::shared::{finalize_screenshot, get_window_title_from_handle, handle_screenshot_task};
+use crate::platform::shared::{
+    finalize_screenshot, get_window_title_from_handle, handle_screenshot_task,
+};
 use crate::shared::ScreenshotParams;
 
 // Windows-specific implementation for taking screenshots

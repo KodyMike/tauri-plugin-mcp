@@ -54,13 +54,12 @@ pub async fn handle_manage_cookies<R: Runtime>(
         },
         "get_for_url" => {
             let url = parsed.url.ok_or_else(|| {
-                crate::error::Error::Anyhow(
-                    "'url' is required for get_for_url action".to_string(),
-                )
+                crate::error::Error::Anyhow("'url' is required for get_for_url action".to_string())
             })?;
-            match webview.cookies_for_url(url.parse().map_err(|e| {
-                crate::error::Error::Anyhow(format!("Invalid URL: {}", e))
-            })?) {
+            match webview.cookies_for_url(
+                url.parse()
+                    .map_err(|e| crate::error::Error::Anyhow(format!("Invalid URL: {}", e)))?,
+            ) {
                 Ok(cookies) => {
                     let cookie_list: Vec<Value> = cookies
                         .iter()

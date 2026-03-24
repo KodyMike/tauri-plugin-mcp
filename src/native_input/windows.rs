@@ -1,8 +1,8 @@
 use tauri::{Runtime, Webview};
 
-use crate::error::Error;
-use super::{InputResult, MouseButton, MouseParams, TextParams, TextResult};
 use super::js_fallback;
+use super::{InputResult, MouseButton, MouseParams, TextParams, TextResult};
+use crate::error::Error;
 
 // TODO: Upgrade to CDP via WebView2's CallDevToolsProtocolMethod for isTrusted=true events.
 // For now, delegate to JS fallback which works for most scenarios.

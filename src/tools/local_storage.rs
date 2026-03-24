@@ -71,7 +71,9 @@ pub async fn handle_get_local_storage<R: Runtime>(
         "get-local-storage-response",
         payload_value,
         std::time::Duration::from_secs(5),
-    ).await {
+    )
+    .await
+    {
         Ok(result_string) => {
             let response: Value = serde_json::from_str(&result_string).map_err(|e| {
                 Error::Anyhow(format!("Failed to parse localStorage response: {}", e))
@@ -90,8 +92,9 @@ pub async fn handle_get_local_storage<R: Runtime>(
             Ok(SocketResponse {
                 success: true,
                 data: Some(
-                    serde_json::to_value(data)
-                        .map_err(|e| Error::Anyhow(format!("Failed to serialize response: {}", e)))?,
+                    serde_json::to_value(data).map_err(|e| {
+                        Error::Anyhow(format!("Failed to serialize response: {}", e))
+                    })?,
                 ),
                 error: None,
                 id: None,

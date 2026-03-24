@@ -29,9 +29,8 @@ pub async fn handle_manage_events<R: Runtime>(
                 crate::error::Error::Anyhow("'event' is required for emit action".to_string())
             })?;
             let event_payload = parsed.payload.unwrap_or(Value::Null);
-            app.emit(&event_name, event_payload.clone()).map_err(|e| {
-                crate::error::Error::Anyhow(format!("Failed to emit event: {}", e))
-            })?;
+            app.emit(&event_name, event_payload.clone())
+                .map_err(|e| crate::error::Error::Anyhow(format!("Failed to emit event: {}", e)))?;
             Ok(SocketResponse {
                 success: true,
                 data: Some(serde_json::json!({"emitted": event_name})),

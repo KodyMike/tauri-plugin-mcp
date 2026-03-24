@@ -1,20 +1,27 @@
 use interprocess::local_socket::{
-    GenericFilePath, GenericNamespaced, ListenerOptions, Name, ToFsName,
-    ToNsName,
+    GenericFilePath, GenericNamespaced, ListenerOptions, Name, ToFsName, ToNsName,
     traits::tokio::Listener as IpcListenerExt,
 };
+use log::{error, info, trace, warn};
 use serde_json::Value;
 use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, Ordering};
 use tauri::{AppHandle, Runtime};
 use tokio::io::{AsyncBufReadExt, AsyncWriteExt, BufReader};
-use log::{info, warn, error, trace};
 
 use serde::{Deserialize, Serialize};
 
+use crate::SocketType;
 use crate::error::Error;
 use crate::tools;
-use crate::SocketType;
+
+/// Returns a secure default socket path using XDG_RUNTIME_DIR (user-private, 0700)
+/// instead of /tmp/ (world-readable). Falls back to /tmp/ only if XDG_RUNTIME_DIR is unset.
+fn secure_default_socket_path() -> String {
+    let base = std::env::var("XDG_RUNTIME_DIR")
+        .unwrap_or_else(|_| std::env::temp_dir().to_string_lossy().to_string());
+    format!("{}/tauri-mcp.sock", base)
+}
 
 #[derive(Debug, Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -54,11 +61,7 @@ impl<R: Runtime> SocketServer<R> {
                 let socket_path = if let Some(path) = path {
                     path.to_string_lossy().to_string()
                 } else {
-                    let temp_dir = std::env::temp_dir();
-                    temp_dir
-                        .join("tauri-mcp.sock")
-                        .to_string_lossy()
-                        .to_string()
+                    secure_default_socket_path()
                 };
                 info!(
                     "[TAURI_MCP] Initializing IPC socket server at: {}",
@@ -106,7 +109,7 @@ impl<R: Runtime> SocketServer<R> {
                 let display_path = if let Some(p) = path {
                     p.to_string_lossy().to_string()
                 } else {
-                    std::env::temp_dir().join("tauri-mcp.sock").to_string_lossy().to_string()
+                    secure_default_socket_path()
                 };
                 info!(
                     "[TAURI_MCP] Socket server started successfully at {}",
@@ -132,7 +135,7 @@ impl<R: Runtime> SocketServer<R> {
             let socket_path = if let Some(p) = &path {
                 p.to_string_lossy().to_string()
             } else {
-                std::env::temp_dir().join("tauri-mcp.sock").to_string_lossy().to_string()
+                secure_default_socket_path()
             };
             if let Ok(metadata) = std::fs::symlink_metadata(&socket_path) {
                 use std::os::unix::fs::FileTypeExt;
@@ -165,15 +168,16 @@ impl<R: Runtime> SocketServer<R> {
 
         // Create tokio IPC listener
         let opts = ListenerOptions::new().name(socket_name);
-        let ipc_listener = opts.create_tokio()
-            .map_err(|e| {
-                info!("[TAURI_MCP] Error creating IPC socket listener: {}", e);
-                if e.kind() == std::io::ErrorKind::AddrInUse {
-                    Error::Io(format!("Socket address already in use. Another instance may be running."))
-                } else {
-                    Error::Io(format!("Failed to create local socket: {}", e))
-                }
-            })?;
+        let ipc_listener = opts.create_tokio().map_err(|e| {
+            info!("[TAURI_MCP] Error creating IPC socket listener: {}", e);
+            if e.kind() == std::io::ErrorKind::AddrInUse {
+                Error::Io(format!(
+                    "Socket address already in use. Another instance may be running."
+                ))
+            } else {
+                Error::Io(format!("Failed to create local socket: {}", e))
+            }
+        })?;
 
         self.write_auth_token_file()?;
         self.running.store(true, Ordering::Release);
@@ -252,12 +256,12 @@ impl<R: Runtime> SocketServer<R> {
 
         // Bind synchronously, then convert to tokio
         let addr = format!("{}:{}", host, port);
-        let std_listener = std::net::TcpListener::bind(&addr)
-            .map_err(|e| {
-                info!("[TAURI_MCP] Error creating TCP socket listener: {}", e);
-                Error::Io(format!("Failed to bind to {}: {}", addr, e))
-            })?;
-        std_listener.set_nonblocking(true)
+        let std_listener = std::net::TcpListener::bind(&addr).map_err(|e| {
+            info!("[TAURI_MCP] Error creating TCP socket listener: {}", e);
+            Error::Io(format!("Failed to bind to {}: {}", addr, e))
+        })?;
+        std_listener
+            .set_nonblocking(true)
             .map_err(|e| Error::Io(format!("Failed to set non-blocking: {}", e)))?;
         let tcp_listener = tokio::net::TcpListener::from_std(std_listener)
             .map_err(|e| Error::Io(format!("Failed to create tokio TcpListener: {}", e)))?;
@@ -273,7 +277,10 @@ impl<R: Runtime> SocketServer<R> {
 
         info!("[TAURI_MCP] Spawning TCP listener task");
         self.listener_task = Some(tokio::spawn(async move {
-            info!("[TAURI_MCP] Listener task started for TCP socket at {}", addr);
+            info!(
+                "[TAURI_MCP] Listener task started for TCP socket at {}",
+                addr
+            );
             loop {
                 tokio::select! {
                     _ = shutdown.notified() => {
@@ -316,13 +323,15 @@ impl<R: Runtime> SocketServer<R> {
         if let Some(ref token) = self.auth_token {
             let token_path = match &self.socket_type {
                 SocketType::Ipc { path } => {
-                    let socket_path = path.clone().unwrap_or_else(|| {
-                        std::env::temp_dir().join("tauri-mcp.sock")
-                    });
+                    let socket_path = path
+                        .clone()
+                        .unwrap_or_else(|| std::path::PathBuf::from(secure_default_socket_path()));
                     format!("{}.token", socket_path.display())
                 }
                 SocketType::Tcp { port, .. } => {
-                    format!("{}/tauri-mcp-{}.token", std::env::temp_dir().display(), port)
+                    let base = std::env::var("XDG_RUNTIME_DIR")
+                        .unwrap_or_else(|_| std::env::temp_dir().to_string_lossy().to_string());
+                    format!("{}/tauri-mcp-{}.token", base, port)
                 }
             };
 
@@ -354,7 +363,10 @@ impl<R: Runtime> SocketServer<R> {
                     self.token_file_path = Some(token_path);
                 }
                 Err(e) => {
-                    error!("[TAURI_MCP] Failed to write auth token file {}: {}", token_path, e);
+                    error!(
+                        "[TAURI_MCP] Failed to write auth token file {}: {}",
+                        token_path, e
+                    );
                 }
             }
         }
@@ -379,7 +391,10 @@ impl<R: Runtime> SocketServer<R> {
                     // Already gone — not an error
                 }
                 Err(e) => {
-                    error!("[TAURI_MCP] Failed to delete auth token file {}: {}", path, e);
+                    error!(
+                        "[TAURI_MCP] Failed to delete auth token file {}: {}",
+                        path, e
+                    );
                 }
             }
         }
@@ -393,8 +408,7 @@ impl<R: Runtime> SocketServer<R> {
         let socket_path = if let Some(p) = path {
             p.to_string_lossy().to_string()
         } else {
-            let temp_dir = std::env::temp_dir();
-            temp_dir.join("tauri-mcp.sock").to_string_lossy().to_string()
+            secure_default_socket_path()
         };
 
         if cfg!(target_os = "windows") {
@@ -420,7 +434,8 @@ fn ct_eq(a: &[u8], b: &[u8]) -> bool {
 
 /// Helper to check if an IO error indicates client disconnection
 fn is_disconnect_error(e: &std::io::Error) -> bool {
-    e.to_string().contains("No process is on the other end of the pipe")
+    e.to_string()
+        .contains("No process is on the other end of the pipe")
         || e.kind() == std::io::ErrorKind::BrokenPipe
         || e.kind() == std::io::ErrorKind::ConnectionReset
 }
@@ -441,6 +456,12 @@ where
     let mut reader = BufReader::new(reader);
     let mut line = String::new();
 
+    // Rate limiting: max 60 requests per second per connection
+    let mut request_timestamps: std::collections::VecDeque<std::time::Instant> =
+        std::collections::VecDeque::new();
+    let rate_limit_window = std::time::Duration::from_secs(1);
+    let max_requests_per_window: usize = 60;
+
     loop {
         line.clear();
         match reader.read_line(&mut line).await {
@@ -449,6 +470,34 @@ where
                 return Ok(());
             }
             Ok(_) => {
+                // Rate limiting check
+                let now = std::time::Instant::now();
+                while request_timestamps
+                    .front()
+                    .is_some_and(|t| now.duration_since(*t) > rate_limit_window)
+                {
+                    request_timestamps.pop_front();
+                }
+                if request_timestamps.len() >= max_requests_per_window {
+                    warn!(
+                        "[TAURI_MCP] Rate limit exceeded ({}/s), dropping request",
+                        max_requests_per_window
+                    );
+                    let error_response = SocketResponse {
+                        success: false,
+                        data: None,
+                        error: Some("Rate limit exceeded. Max 60 requests/second.".to_string()),
+                        id: None,
+                    };
+                    let error_json =
+                        serde_json::to_string(&error_response).unwrap_or_default() + "\n";
+                    if let Err(e) = write_response(&mut writer, error_json.as_bytes()).await {
+                        return Err(e);
+                    }
+                    continue;
+                }
+                request_timestamps.push_back(now);
+
                 if log::log_enabled!(log::Level::Trace) {
                     trace!("[TAURI_MCP] Read: {}", line.trim());
                 }
@@ -496,7 +545,9 @@ where
         // Validate auth token if configured (constant-time comparison)
         if let Some(ref expected_token) = auth_token {
             match &request.auth_token {
-                Some(provided_token) if ct_eq(provided_token.as_bytes(), expected_token.as_bytes()) => {
+                Some(provided_token)
+                    if ct_eq(provided_token.as_bytes(), expected_token.as_bytes()) =>
+                {
                     // Token matches, proceed
                 }
                 _ => {
@@ -504,12 +555,14 @@ where
                     let error_response = SocketResponse {
                         success: false,
                         data: None,
-                        error: Some("Authentication failed: invalid or missing auth token".to_string()),
+                        error: Some(
+                            "Authentication failed: invalid or missing auth token".to_string(),
+                        ),
                         id: request_id,
                     };
-                    let error_json = serde_json::to_string(&error_response)
-                        .map_err(|e| Error::Anyhow(format!("Failed to serialize auth error: {}", e)))?
-                        + "\n";
+                    let error_json = serde_json::to_string(&error_response).map_err(|e| {
+                        Error::Anyhow(format!("Failed to serialize auth error: {}", e))
+                    })? + "\n";
                     if let Err(e) = write_response(&mut writer, error_json.as_bytes()).await {
                         return Err(e);
                     }
@@ -522,18 +575,19 @@ where
 
         let request_id = request.id.clone();
 
-        let mut response = match tools::handle_command(&app, &request.command, request.payload).await {
-            Ok(resp) => resp,
-            Err(e) => {
-                info!("[TAURI_MCP] Command error: {}", e);
-                SocketResponse {
-                    success: false,
-                    data: None,
-                    error: Some(e.to_string()),
-                    id: None,
+        let mut response =
+            match tools::handle_command(&app, &request.command, request.payload).await {
+                Ok(resp) => resp,
+                Err(e) => {
+                    info!("[TAURI_MCP] Command error: {}", e);
+                    SocketResponse {
+                        success: false,
+                        data: None,
+                        error: Some(e.to_string()),
+                        id: None,
+                    }
                 }
-            }
-        };
+            };
 
         response.id = request_id;
 

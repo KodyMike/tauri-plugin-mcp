@@ -1,7 +1,7 @@
 use serde::{Deserialize, Serialize};
 
-pub mod state;
 pub mod js_fallback;
+pub mod state;
 
 #[cfg(target_os = "macos")]
 pub mod macos;

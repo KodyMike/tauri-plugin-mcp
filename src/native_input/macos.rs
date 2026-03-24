@@ -2,11 +2,11 @@ use std::ffi::c_void;
 use std::sync::mpsc;
 use std::time::Duration;
 
-use tauri::{Runtime, Webview};
 use log::debug;
+use tauri::{Runtime, Webview};
 
-use crate::error::Error;
 use super::{InputResult, MouseButton, MouseParams, TextParams, TextResult};
+use crate::error::Error;
 
 // ---- Raw ObjC runtime FFI (replaces objc 0.2 / cocoa crates) ----
 
@@ -76,16 +76,12 @@ type MsgSendStretRect = unsafe extern "C" fn(*mut NSRect, Id, Sel);
 type MsgSendStretRectRect = unsafe extern "C" fn(*mut NSRect, Id, Sel, NSRect);
 
 // mouseEventWithType:location:modifierFlags:timestamp:windowNumber:context:eventNumber:clickCount:pressure:
-type MsgSendMouseEvent = unsafe extern "C" fn(
-    Class, Sel,
-    u64, NSPoint, u64, f64, i64, Id, i64, i64, f32,
-) -> Id;
+type MsgSendMouseEvent =
+    unsafe extern "C" fn(Class, Sel, u64, NSPoint, u64, f64, i64, Id, i64, i64, f32) -> Id;
 
 // keyEventWithType:location:modifierFlags:timestamp:windowNumber:context:characters:charactersIgnoringModifiers:isARepeat:keyCode:
-type MsgSendKeyEvent = unsafe extern "C" fn(
-    Class, Sel,
-    u64, NSPoint, u64, f64, i64, Id, Id, Id, i8, u16,
-) -> Id;
+type MsgSendKeyEvent =
+    unsafe extern "C" fn(Class, Sel, u64, NSPoint, u64, f64, i64, Id, Id, Id, i8, u16) -> Id;
 
 // ---- Helpers ----
 
@@ -151,11 +147,7 @@ const NS_OTHER_MOUSE_UP: u64 = 26;
 unsafe fn get_content_height(ns_window: Id) -> f64 {
     unsafe {
         let frame = msg_send_rect(ns_window, sel(b"frame\0"));
-        let content_rect = msg_send_rect_rect(
-            ns_window,
-            sel(b"contentRectForFrameRect:\0"),
-            frame,
-        );
+        let content_rect = msg_send_rect_rect(ns_window, sel(b"contentRectForFrameRect:\0"), frame);
         content_rect.size.height
     }
 }
@@ -178,10 +170,7 @@ unsafe fn send_mouse_event(
 ) {
     unsafe {
         let send_id: MsgSendId = std::mem::transmute(objc_msgSend as *const c_void);
-        let ns_app = send_id(
-            class(b"NSApplication\0"),
-            sel(b"sharedApplication\0"),
-        );
+        let ns_app = send_id(class(b"NSApplication\0"), sel(b"sharedApplication\0"));
 
         let create: MsgSendMouseEvent = std::mem::transmute(objc_msgSend as *const c_void);
         let event = create(
@@ -203,10 +192,7 @@ unsafe fn send_key_event(
 ) {
     unsafe {
         let send_id: MsgSendId = std::mem::transmute(objc_msgSend as *const c_void);
-        let ns_app = send_id(
-            class(b"NSApplication\0"),
-            sel(b"sharedApplication\0"),
-        );
+        let ns_app = send_id(class(b"NSApplication\0"), sel(b"sharedApplication\0"));
 
         let create: MsgSendKeyEvent = std::mem::transmute(objc_msgSend as *const c_void);
         let event = create(

@@ -1,4 +1,4 @@
-use crate::desktop::{create_error_response, create_success_response, WindowHandle};
+use crate::desktop::{WindowHandle, create_error_response, create_success_response};
 use crate::models::ScreenshotResponse;
 use crate::shared::ScreenshotParams;
 use crate::tools::take_screenshot::{process_image, process_image_to_file, process_thumbnail};
@@ -24,7 +24,6 @@ where
     }
 }
 
-
 /// Finalize a screenshot capture: branches on save_to_disk/thumbnail params to produce the right response.
 pub fn finalize_screenshot(
     dynamic_image: DynamicImage,
@@ -44,7 +43,10 @@ pub fn finalize_screenshot(
         (true, true) => {
             let file_path = process_image_to_file(dynamic_image.clone(), params, &output_dir)?;
             let thumb_data_url = process_thumbnail(dynamic_image)?;
-            info!("[SCREENSHOT] Combo mode: thumbnail inline + file at {}", file_path);
+            info!(
+                "[SCREENSHOT] Combo mode: thumbnail inline + file at {}",
+                file_path
+            );
             Ok(ScreenshotResponse {
                 data: Some(thumb_data_url),
                 success: true,

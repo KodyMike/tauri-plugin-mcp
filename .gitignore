@@ -72,7 +72,7 @@ Desktop.ini
 *.AppImage
 *.msi
 *.app
-
+.codemap
 
 .claude/
 CLAUDE.md

@@ -35,9 +35,22 @@ pub async fn handle_navigate_webview<R: Runtime>(
             let parsed_url: tauri::Url = url.parse().map_err(|e| {
                 crate::error::Error::Anyhow(format!("Invalid URL '{}': {}", url, e))
             })?;
-            webview.navigate(parsed_url).map_err(|e| {
-                crate::error::Error::Anyhow(format!("Failed to navigate: {}", e))
-            })?;
+            // Block dangerous URI schemes that could execute code or exfiltrate data
+            let scheme = parsed_url.scheme();
+            if matches!(scheme, "javascript" | "data" | "vbscript" | "blob") {
+                return Ok(SocketResponse {
+                    success: false,
+                    data: None,
+                    error: Some(format!(
+                        "Blocked navigation to dangerous scheme: {}",
+                        scheme
+                    )),
+                    id: None,
+                });
+            }
+            webview
+                .navigate(parsed_url)
+                .map_err(|e| crate::error::Error::Anyhow(format!("Failed to navigate: {}", e)))?;
             Ok(SocketResponse {
                 success: true,
                 data: Some(serde_json::json!({"action": "navigate", "url": url})),
@@ -46,9 +59,9 @@ pub async fn handle_navigate_webview<R: Runtime>(
             })
         }
         "reload" => {
-            webview.eval("location.reload()").map_err(|e| {
-                crate::error::Error::Anyhow(format!("Failed to reload: {}", e))
-            })?;
+            webview
+                .eval("location.reload()")
+                .map_err(|e| crate::error::Error::Anyhow(format!("Failed to reload: {}", e)))?;
             Ok(SocketResponse {
                 success: true,
                 data: Some(serde_json::json!({"action": "reload"})),
@@ -79,7 +92,9 @@ pub async fn handle_navigate_webview<R: Runtime>(
                 "navigate-webview-response",
                 js_payload,
                 std::time::Duration::from_secs(5),
-            ).await {
+            )
+            .await
+            {
                 Ok(result) => Ok(parse_js_response(&result)),
                 Err(e) => Ok(SocketResponse {
                     success: false,

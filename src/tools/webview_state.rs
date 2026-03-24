@@ -53,10 +53,7 @@ pub async fn handle_manage_webview_state<R: Runtime>(
             webview
                 .set_background_color(Some((r, g, b, a).into()))
                 .map_err(|e| {
-                    crate::error::Error::Anyhow(format!(
-                        "Failed to set background color: {}",
-                        e
-                    ))
+                    crate::error::Error::Anyhow(format!("Failed to set background color: {}", e))
                 })?;
             Ok(SocketResponse {
                 success: true,
