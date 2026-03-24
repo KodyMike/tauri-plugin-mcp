@@ -306,12 +306,16 @@ impl<R: Runtime> TauriMcp<R> {
         // Use platform-specific implementation to capture the window
         let result = crate::platform::current::take_screenshot(params.clone(), window_context).await;
 
-        // On Linux, if xcap failed, fall back to JS-based webview capture
+        // On Linux, if xcap failed, fall back to JS-based webview capture.
+        // Note: handle_screenshot_task wraps errors as Ok(ScreenshotResponse { error: Some(...) }),
+        // so we check the response's error field, not Result::Err.
         #[cfg(target_os = "linux")]
-        if let Err(ref _e) = result {
-            info!("[TAURI_MCP] xcap screenshot failed, trying JS-based webview capture fallback");
-            if let Some(fallback) = self.take_screenshot_via_js(&window_label, &params).await {
-                return Ok(fallback);
+        if let Ok(ref resp) = result {
+            if resp.error.is_some() || !resp.success {
+                info!("[TAURI_MCP] xcap screenshot failed, trying JS-based webview capture fallback");
+                if let Some(fallback) = self.take_screenshot_via_js(&window_label, &params).await {
+                    return Ok(fallback);
+                }
             }
         }
 
