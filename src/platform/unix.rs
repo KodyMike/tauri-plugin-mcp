@@ -6,7 +6,9 @@ use tauri::Runtime;
 
 // Import shared functionality
 use crate::desktop::ScreenshotContext;
-use crate::platform::shared::{finalize_screenshot, get_window_title_from_handle, handle_screenshot_task};
+use crate::platform::shared::{
+    finalize_screenshot, get_window_title_from_handle, handle_screenshot_task,
+};
 use crate::shared::ScreenshotParams;
 
 // Linux/Unix implementation for taking screenshots using xcap
@@ -28,50 +30,75 @@ pub async fn take_screenshot<R: Runtime>(
     let window_title = get_window_title_from_handle(&window_context.window_handle)?;
 
     handle_screenshot_task(move || {
-        info!("[TAURI-MCP] Looking for window with title: {} (label: {})", window_title, window_label);
+        info!(
+            "[TAURI-MCP] Looking for window with title: {} (label: {})",
+            window_title, window_label
+        );
 
         // Get all windows using xcap
         let xcap_windows = match xcap::Window::all() {
             Ok(windows) => windows,
-            Err(e) => return Err(Error::WindowOperationFailed(format!("Failed to get window list: {}", e))),
+            Err(e) => {
+                return Err(Error::WindowOperationFailed(format!(
+                    "Failed to get window list: {}",
+                    e
+                )));
+            }
         };
 
-        info!("[TAURI-MCP] Found {} windows through xcap", xcap_windows.len());
+        info!(
+            "[TAURI-MCP] Found {} windows through xcap",
+            xcap_windows.len()
+        );
 
         // Find the target window
         if let Some(window) = find_window(&xcap_windows, &window_title, &application_name) {
             // Capture image directly from the window
             let image = match window.capture_image() {
                 Ok(img) => img,
-                Err(e) => return Err(Error::WindowOperationFailed(format!("Failed to capture window image: {}", e))),
+                Err(e) => {
+                    return Err(Error::WindowOperationFailed(format!(
+                        "Failed to capture window image: {}",
+                        e
+                    )));
+                }
             };
 
-            info!("[TAURI-MCP] Successfully captured window image: {}x{}",
-                  image.width(), image.height());
+            info!(
+                "[TAURI-MCP] Successfully captured window image: {}x{}",
+                image.width(),
+                image.height()
+            );
 
             // Convert to DynamicImage for further processing
             let dynamic_image = image::DynamicImage::ImageRgba8(image);
 
             finalize_screenshot(dynamic_image, &params_clone)
         } else {
-            Err(Error::WindowOperationFailed(
-                format!("Window not found. Searched for title='{}', app='{}'. \
+            Err(Error::WindowOperationFailed(format!(
+                "Window not found. Searched for title='{}', app='{}'. \
                 Found {} xcap windows. Please ensure the window is visible and not minimized.",
-                window_title, application_name, xcap_windows.len())
-            ))
+                window_title,
+                application_name,
+                xcap_windows.len()
+            )))
         }
-    }).await
+    })
+    .await
 }
 
 // Helper function to find the window in the xcap window list
-fn find_window(xcap_windows: &[xcap::Window], window_title: &str, application_name: &str) -> Option<xcap::Window> {
+fn find_window(
+    xcap_windows: &[xcap::Window],
+    window_title: &str,
+    application_name: &str,
+) -> Option<xcap::Window> {
     let application_name_lower = application_name.to_lowercase();
     let window_title_lower = window_title.to_lowercase();
 
     info!(
         "[TAURI-MCP] Searching for window with title: '{}', app_name: '{}' (case-insensitive)",
-        window_title,
-        application_name
+        window_title, application_name
     );
 
     // Debug all windows to help with troubleshooting

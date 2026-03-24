@@ -1,18 +1,20 @@
 use crate::models::ScreenshotResponse;
 use crate::{Error, Result};
-use image;
-use log::{debug, info, error};
-use tauri::Runtime;
-use core_graphics::display::{
-    CGWindowListCopyWindowInfo, kCGWindowListOptionAll, kCGWindowListExcludeDesktopElements,
-    kCGNullWindowID, CGWindowListCreateImage, CGRect, CGPoint, CGSize,
-    kCGWindowImageDefault, kCGWindowImageBoundsIgnoreFraming,
-};
 use core_graphics::base::CGFloat;
+use core_graphics::display::{
+    CGPoint, CGRect, CGSize, CGWindowListCopyWindowInfo, CGWindowListCreateImage, kCGNullWindowID,
+    kCGWindowImageBoundsIgnoreFraming, kCGWindowImageDefault, kCGWindowListExcludeDesktopElements,
+    kCGWindowListOptionAll,
+};
+use image;
+use log::{debug, error, info};
+use tauri::Runtime;
 
 // Import shared functionality
 use crate::desktop::ScreenshotContext;
-use crate::platform::shared::{finalize_screenshot, get_window_title_from_handle, handle_screenshot_task};
+use crate::platform::shared::{
+    finalize_screenshot, get_window_title_from_handle, handle_screenshot_task,
+};
 use crate::shared::ScreenshotParams;
 
 /// Window info extracted from CGWindowListCopyWindowInfo
@@ -28,8 +30,8 @@ struct WindowInfo {
 /// Get all windows using CGWindowListCopyWindowInfo with kCGWindowListOptionAll
 /// This finds windows that xcap's kCGWindowListOptionOnScreenOnly misses (like Tauri windows)
 fn get_all_windows_cg() -> Vec<WindowInfo> {
-    use core_foundation::base::TCFType;
     use core_foundation::array::CFArray;
+    use core_foundation::base::TCFType;
     use core_foundation::dictionary::CFDictionary;
     use core_foundation::string::CFString;
 
@@ -78,9 +80,15 @@ fn get_all_windows_cg() -> Vec<WindowInfo> {
     windows
 }
 
-fn get_string_from_dict(dict: &core_foundation::dictionary::CFDictionary<core_foundation::string::CFString, *const std::ffi::c_void>, key: &str) -> Option<String> {
-    use core_foundation::string::CFString;
+fn get_string_from_dict(
+    dict: &core_foundation::dictionary::CFDictionary<
+        core_foundation::string::CFString,
+        *const std::ffi::c_void,
+    >,
+    key: &str,
+) -> Option<String> {
     use core_foundation::base::TCFType;
+    use core_foundation::string::CFString;
 
     let cf_key = CFString::new(key);
     unsafe {
@@ -93,10 +101,16 @@ fn get_string_from_dict(dict: &core_foundation::dictionary::CFDictionary<core_fo
     }
 }
 
-fn get_number_from_dict(dict: &core_foundation::dictionary::CFDictionary<core_foundation::string::CFString, *const std::ffi::c_void>, key: &str) -> Option<i64> {
-    use core_foundation::string::CFString;
-    use core_foundation::number::CFNumber;
+fn get_number_from_dict(
+    dict: &core_foundation::dictionary::CFDictionary<
+        core_foundation::string::CFString,
+        *const std::ffi::c_void,
+    >,
+    key: &str,
+) -> Option<i64> {
     use core_foundation::base::TCFType;
+    use core_foundation::number::CFNumber;
+    use core_foundation::string::CFString;
 
     let cf_key = CFString::new(key);
     unsafe {
@@ -109,10 +123,15 @@ fn get_number_from_dict(dict: &core_foundation::dictionary::CFDictionary<core_fo
     }
 }
 
-fn get_bounds_from_dict(dict: &core_foundation::dictionary::CFDictionary<core_foundation::string::CFString, *const std::ffi::c_void>) -> (f64, f64, f64, f64) {
-    use core_foundation::string::CFString;
-    use core_foundation::dictionary::CFDictionary;
+fn get_bounds_from_dict(
+    dict: &core_foundation::dictionary::CFDictionary<
+        core_foundation::string::CFString,
+        *const std::ffi::c_void,
+    >,
+) -> (f64, f64, f64, f64) {
     use core_foundation::base::TCFType;
+    use core_foundation::dictionary::CFDictionary;
+    use core_foundation::string::CFString;
 
     let cf_key = CFString::new("kCGWindowBounds");
     unsafe {
@@ -139,8 +158,14 @@ fn capture_window_by_id(window_id: u32, bounds: (f64, f64, f64, f64)) -> Result<
     let (x, y, width, height) = bounds;
 
     let rect = CGRect {
-        origin: CGPoint { x: x as CGFloat, y: y as CGFloat },
-        size: CGSize { width: width as CGFloat, height: height as CGFloat },
+        origin: CGPoint {
+            x: x as CGFloat,
+            y: y as CGFloat,
+        },
+        size: CGSize {
+            width: width as CGFloat,
+            height: height as CGFloat,
+        },
     };
 
     unsafe {
@@ -152,7 +177,9 @@ fn capture_window_by_id(window_id: u32, bounds: (f64, f64, f64, f64)) -> Result<
         );
 
         if image_ref.is_null() {
-            return Err(Error::WindowOperationFailed("Failed to capture window image".to_string()));
+            return Err(Error::WindowOperationFailed(
+                "Failed to capture window image".to_string(),
+            ));
         }
 
         let cg_image = core_graphics::image::CGImage::from_ptr(image_ref);
@@ -184,8 +211,9 @@ fn capture_window_by_id(window_id: u32, bounds: (f64, f64, f64, f64)) -> Result<
             }
         }
 
-        image::RgbaImage::from_raw(img_width as u32, img_height as u32, rgba_data)
-            .ok_or_else(|| Error::WindowOperationFailed("Failed to create image from raw data".to_string()))
+        image::RgbaImage::from_raw(img_width as u32, img_height as u32, rgba_data).ok_or_else(
+            || Error::WindowOperationFailed("Failed to create image from raw data".to_string()),
+        )
     }
 }
 
@@ -273,14 +301,17 @@ pub async fn take_screenshot<R: Runtime>(
 }
 
 // Helper function to find the window in the xcap window list - optimized version
-fn find_window(xcap_windows: &[xcap::Window], window_title: &str, application_name: &str) -> Option<xcap::Window> {
+fn find_window(
+    xcap_windows: &[xcap::Window],
+    window_title: &str,
+    application_name: &str,
+) -> Option<xcap::Window> {
     let application_name_lower = application_name.to_lowercase();
     let window_title_lower = window_title.to_lowercase();
 
     info!(
         "[TAURI-MCP] Searching for window with title: '{}', app_name: '{}' (case-insensitive)",
-        window_title,
-        application_name
+        window_title, application_name
     );
 
     // Log all windows to help with troubleshooting
@@ -297,9 +328,9 @@ fn find_window(xcap_windows: &[xcap::Window], window_title: &str, application_na
 
     // Check if we might have a permissions issue (only Window Server menubar visible)
     if xcap_windows.len() <= 1 {
-        let only_menubar = xcap_windows.iter().all(|w|
-            w.app_name() == "Window Server" || w.title() == "Menubar"
-        );
+        let only_menubar = xcap_windows
+            .iter()
+            .all(|w| w.app_name() == "Window Server" || w.title() == "Menubar");
         if only_menubar {
             error!("[TAURI-MCP] Permission issue detected: Only Window Server menubar is visible.");
             error!("[TAURI-MCP] Please grant Screen Recording permission to this app in:");
@@ -374,53 +405,65 @@ fn find_window(xcap_windows: &[xcap::Window], window_title: &str, application_na
 
     error!(
         "[TAURI-MCP] No matching window found for title='{}', app_name='{}'",
-        window_title,
-        application_name
+        window_title, application_name
     );
     None
 }
 
 // Helper function to find window in CGWindowListCopyWindowInfo results
-fn find_window_cg(windows: &[WindowInfo], window_title: &str, application_name: &str) -> Option<WindowInfo> {
+fn find_window_cg(
+    windows: &[WindowInfo],
+    window_title: &str,
+    application_name: &str,
+) -> Option<WindowInfo> {
     let application_name_lower = application_name.to_lowercase();
     let window_title_lower = window_title.to_lowercase();
 
     // Only consider layer 0 windows (normal windows)
-    let normal_windows: Vec<_> = windows.iter()
-        .filter(|w| w.layer == 0)
-        .collect();
+    let normal_windows: Vec<_> = windows.iter().filter(|w| w.layer == 0).collect();
 
-    info!("[TAURI-MCP] CG: Searching {} normal windows for title='{}', app='{}'",
-          normal_windows.len(), window_title, application_name);
+    info!(
+        "[TAURI-MCP] CG: Searching {} normal windows for title='{}', app='{}'",
+        normal_windows.len(),
+        window_title,
+        application_name
+    );
 
     // Step 1: Exact owner name + window name match
     for window in &normal_windows {
-        if window.owner_name.to_lowercase() == application_name_lower
-            && window.name == window_title {
+        if window.owner_name.to_lowercase() == application_name_lower && window.name == window_title
+        {
             return Some((*window).clone());
         }
     }
 
     // Step 2: Owner name contains app name + exact window name
     for window in &normal_windows {
-        if window.owner_name.to_lowercase().contains(&application_name_lower)
-            && window.name == window_title {
+        if window
+            .owner_name
+            .to_lowercase()
+            .contains(&application_name_lower)
+            && window.name == window_title
+        {
             return Some((*window).clone());
         }
     }
 
     // Step 3: Owner name match + partial window name match
     for window in &normal_windows {
-        if window.owner_name.to_lowercase().contains(&application_name_lower)
-            && window.name.to_lowercase().contains(&window_title_lower) {
+        if window
+            .owner_name
+            .to_lowercase()
+            .contains(&application_name_lower)
+            && window.name.to_lowercase().contains(&window_title_lower)
+        {
             return Some((*window).clone());
         }
     }
 
     // Step 4: Just partial window name match with non-empty name
     for window in &normal_windows {
-        if !window.name.is_empty()
-            && window.name.to_lowercase().contains(&window_title_lower) {
+        if !window.name.is_empty() && window.name.to_lowercase().contains(&window_title_lower) {
             return Some((*window).clone());
         }
     }
@@ -428,7 +471,10 @@ fn find_window_cg(windows: &[WindowInfo], window_title: &str, application_name: 
     // Step 5: Owner name match only (for windows with empty title)
     for window in &normal_windows {
         if window.owner_name.to_lowercase() == application_name_lower
-            && window.bounds.2 > 100.0 && window.bounds.3 > 100.0 { // reasonable size
+            && window.bounds.2 > 100.0
+            && window.bounds.3 > 100.0
+        {
+            // reasonable size
             return Some((*window).clone());
         }
     }

@@ -3,11 +3,11 @@ use tauri::{AppHandle, Manager, Runtime};
 
 use crate::error::Error;
 use crate::models::MouseMovementRequest;
-use crate::native_input::{self, MouseButton, MouseParams};
 use crate::native_input::state::VirtualCursorState;
+use crate::native_input::{self, MouseButton, MouseParams};
 use crate::socket_server::SocketResponse;
-use std::time::Instant;
 use log::info;
+use std::time::Instant;
 
 pub async fn simulate_mouse_movement_async<R: Runtime>(
     app: &AppHandle<R>,
@@ -83,7 +83,8 @@ pub async fn simulate_mouse_movement_async<R: Runtime>(
                 }}
                 if(t&&t!==document.body&&t.focus){{t.focus({{preventScroll:true}});}}
             }})()"#,
-            x = target_x, y = target_y
+            x = target_x,
+            y = target_y
         );
         let _ = webview.eval(&focus_js);
     }

@@ -2,9 +2,9 @@
 // On macOS, the macos backend handles everything natively.
 #![allow(dead_code)]
 
-use tauri::{Runtime, Webview};
+use super::{InputResult, MouseButton, MouseParams, TextParams, TextResult};
 use crate::error::Error;
-use super::{MouseParams, TextParams, MouseButton, InputResult, TextResult};
+use tauri::{Runtime, Webview};
 
 /// Inject mouse events via JS synthetic event dispatch.
 /// Note: isTrusted=false — some frameworks may ignore these events,
@@ -24,7 +24,8 @@ pub fn inject_mouse_via_js<R: Runtime>(
                 clientX: {x}, clientY: {y}, bubbles: true, cancelable: true
             }}));
         "#,
-        x = x, y = y
+        x = x,
+        y = y
     );
 
     let button_num = match params.button {
@@ -46,7 +47,9 @@ pub fn inject_mouse_via_js<R: Runtime>(
                 clientX: {x}, clientY: {y}, button: {btn}, bubbles: true, cancelable: true
             }}));
             "#,
-            x = x, y = y, btn = button_num
+            x = x,
+            y = y,
+            btn = button_num
         ));
 
         // Focus the nearest typeable ancestor and store click coords for fallback recovery
@@ -73,7 +76,9 @@ pub fn inject_mouse_via_js<R: Runtime>(
                 clientX: {x}, clientY: {y}, button: {btn}, bubbles: true, cancelable: true
             }}));
             "#,
-            x = x, y = y, btn = button_num
+            x = x,
+            y = y,
+            btn = button_num
         ));
     } else if params.mouse_up {
         js.push_str(&format!(
@@ -82,15 +87,17 @@ pub fn inject_mouse_via_js<R: Runtime>(
                 clientX: {x}, clientY: {y}, button: {btn}, bubbles: true, cancelable: true
             }}));
             "#,
-            x = x, y = y, btn = button_num
+            x = x,
+            y = y,
+            btn = button_num
         ));
     }
 
     js.push_str("})();");
 
-    webview.eval(&js).map_err(|e| {
-        Error::Anyhow(format!("Failed to inject mouse event via JS: {}", e))
-    })?;
+    webview
+        .eval(&js)
+        .map_err(|e| Error::Anyhow(format!("Failed to inject mouse event via JS: {}", e)))?;
 
     Ok(InputResult {
         success: true,
@@ -106,7 +113,8 @@ pub fn inject_text_via_js<R: Runtime>(
     webview: &Webview<R>,
     params: &TextParams,
 ) -> Result<TextResult, Error> {
-    let text_escaped = params.text
+    let text_escaped = params
+        .text
         .replace('\\', "\\\\")
         .replace('\'', "\\'")
         .replace('\n', "\\n")
@@ -149,7 +157,8 @@ pub fn inject_text_via_js<R: Runtime>(
             }}
             typeChar(0);
         }})();"#,
-            text = text_escaped, delay = delay_ms
+            text = text_escaped,
+            delay = delay_ms
         )
     } else {
         // Immediate: inject all text at once
@@ -181,9 +190,9 @@ pub fn inject_text_via_js<R: Runtime>(
         )
     };
 
-    webview.eval(&js).map_err(|e| {
-        Error::Anyhow(format!("Failed to inject text via JS: {}", e))
-    })?;
+    webview
+        .eval(&js)
+        .map_err(|e| Error::Anyhow(format!("Failed to inject text via JS: {}", e)))?;
 
     // Block until paced typing completes to match macOS backend's synchronous behavior.
     // The JS uses setTimeout chains, so webview.eval() returns immediately.

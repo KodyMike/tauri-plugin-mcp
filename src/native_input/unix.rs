@@ -1,8 +1,8 @@
 use tauri::{Runtime, Webview};
 
-use crate::error::Error;
-use super::{InputResult, MouseParams, TextParams, TextResult};
 use super::js_fallback;
+use super::{InputResult, MouseParams, TextParams, TextResult};
+use crate::error::Error;
 
 // TODO: Future upgrade path — inject GdkEvent directly into the WebKitWebView
 // via with_webview(|platform_wv| { platform_wv.inner() /* webkit2gtk::WebView */ }).

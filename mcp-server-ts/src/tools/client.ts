@@ -4,12 +4,11 @@ import * as fs from 'fs';
 
 // Constants
 const SOCKET_FILENAME = 'tauri-mcp.sock';
-// Use /tmp on Unix as a well-known default. The Tauri app and MCP server run as
-// separate processes with different TMPDIR values (e.g. GUI vs terminal on macOS),
-// so os.tmpdir() can't be relied on to match the Rust side.
+// Use XDG_RUNTIME_DIR on Linux (user-private, 0700) instead of /tmp/ (world-readable).
+// Falls back to /tmp/ only if XDG_RUNTIME_DIR is unset.
 const DEFAULT_SOCKET_PATH = os.platform() === 'win32'
   ? `${os.tmpdir()}\\${SOCKET_FILENAME}`
-  : `/tmp/${SOCKET_FILENAME}`;
+  : `${process.env.XDG_RUNTIME_DIR || '/tmp'}/${SOCKET_FILENAME}`;
 
 // Connection configuration types
 export interface IpcConfig {

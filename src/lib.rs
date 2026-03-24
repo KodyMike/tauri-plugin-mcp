@@ -1,8 +1,8 @@
+use log::{info, warn};
 use tauri::{
     Manager, Runtime,
     plugin::{Builder, TauriPlugin},
 };
-use log::{info, warn};
 
 pub use models::*;
 
@@ -21,9 +21,7 @@ mod platform;
 mod native_input;
 
 pub use error::{Error, Result};
-pub use shared::{
-    ScreenshotParams, ScreenshotResult, WindowManagerParams, WindowManagerResult,
-};
+pub use shared::{ScreenshotParams, ScreenshotResult, WindowManagerParams, WindowManagerResult};
 
 #[cfg(desktop)]
 use desktop::TauriMcp;
@@ -65,7 +63,6 @@ impl Default for SocketType {
 }
 
 /// Plugin configuration options.
-#[derive(Default)]
 pub struct PluginConfig {
     /// Application name (used for default socket naming)
     pub application_name: String,
@@ -81,6 +78,18 @@ pub struct PluginConfig {
     /// Optional auth token for socket server authentication.
     /// When set, clients must include this token in requests.
     pub auth_token: Option<String>,
+}
+
+impl Default for PluginConfig {
+    fn default() -> Self {
+        Self {
+            application_name: String::new(),
+            socket_type: SocketType::default(),
+            start_socket_server: true,
+            default_webview_label: None,
+            auth_token: None,
+        }
+    }
 }
 
 impl PluginConfig {
@@ -153,7 +162,9 @@ pub fn init_with_config<R: Runtime>(config: PluginConfig) -> TauriPlugin<R> {
                     path.display()
                 );
             } else {
-                let default_path = std::env::temp_dir().join("tauri-mcp.sock");
+                let base = std::env::var("XDG_RUNTIME_DIR")
+                    .unwrap_or_else(|_| std::env::temp_dir().to_string_lossy().to_string());
+                let default_path = std::path::PathBuf::from(format!("{}/tauri-mcp.sock", base));
                 info!(
                     "[TAURI_MCP] Socket server will use default IPC path: {}",
                     default_path.display()
@@ -161,15 +172,15 @@ pub fn init_with_config<R: Runtime>(config: PluginConfig) -> TauriPlugin<R> {
             }
         }
         SocketType::Tcp { host, port } => {
-            info!(
-                "[TAURI_MCP] Socket server will use TCP: {}:{}",
-                host, port
-            );
+            info!("[TAURI_MCP] Socket server will use TCP: {}:{}", host, port);
         }
     }
 
     if config.auth_token.is_none() {
-        warn!("[TAURI_MCP] WARNING: No auth token configured. Socket server is unauthenticated.");
+        warn!(
+            "[TAURI_MCP] SECURITY WARNING: No auth token configured. Any local process can connect. Set .auth_token() for secure operation."
+        );
+        warn!("[TAURI_MCP] Generate one with: uuid::Uuid::new_v4().to_string()");
     }
 
     if config.start_socket_server {

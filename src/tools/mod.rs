@@ -1,6 +1,6 @@
+use log::{debug, info};
 use serde_json::Value;
 use tauri::{AppHandle, Runtime};
-use log::{info, debug};
 
 use crate::shared::commands;
 use crate::socket_server::SocketResponse;
@@ -39,9 +39,9 @@ pub use ping::handle_ping;
 pub use take_screenshot::handle_take_screenshot;
 pub use text_input::handle_simulate_text_input;
 pub use webview::{
-    handle_get_dom, handle_get_element_position, handle_get_page_map, handle_send_text_to_element,
-    handle_get_page_state, handle_navigate_back, handle_scroll_page, handle_fill_form, handle_wait_for,
-    handle_type_into_focused,
+    handle_fill_form, handle_get_dom, handle_get_element_position, handle_get_page_map,
+    handle_get_page_state, handle_navigate_back, handle_scroll_page, handle_send_text_to_element,
+    handle_type_into_focused, handle_wait_for,
 };
 pub use webview_state::handle_manage_webview_state;
 pub use window_manager::handle_manage_window;
@@ -136,10 +136,7 @@ pub async fn handle_command<R: Runtime>(
             info!("[TAURI_MCP] Error: {}", err);
         }
     } else if let Err(ref e) = result {
-        info!(
-            "[TAURI_MCP] Command {} failed with error: {}",
-            command, e
-        );
+        info!("[TAURI_MCP] Command {} failed with error: {}", command, e);
     }
 
     result
@@ -181,11 +178,7 @@ mod tests {
 
         let mut seen = std::collections::HashSet::new();
         for cmd in &all_commands {
-            assert!(
-                seen.insert(*cmd),
-                "Duplicate command constant: {}",
-                cmd
-            );
+            assert!(seen.insert(*cmd), "Duplicate command constant: {}", cmd);
         }
         assert_eq!(seen.len(), 25, "Expected 25 unique commands");
     }

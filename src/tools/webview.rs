@@ -169,7 +169,9 @@ pub async fn handle_get_dom<R: Runtime>(
         "got-dom-content-response",
         serde_json::json!("test"),
         std::time::Duration::from_secs(timeout_secs),
-    ).await {
+    )
+    .await
+    {
         Ok(dom_string) => {
             if dom_string.is_empty() {
                 Ok(crate::socket_server::SocketResponse {
@@ -236,7 +238,9 @@ pub async fn handle_get_page_map<R: Runtime>(
         "get-page-map-response",
         js_payload,
         std::time::Duration::from_secs(timeout_secs),
-    ).await {
+    )
+    .await
+    {
         Ok(result_string) => {
             if result_string.is_empty() || result_string == "\"\"" {
                 return Ok(crate::socket_server::SocketResponse {
@@ -331,7 +335,9 @@ pub async fn handle_get_element_position<R: Runtime>(
         "get-element-position-response",
         js_payload,
         std::time::Duration::from_secs(5),
-    ).await {
+    )
+    .await
+    {
         Ok(result) => {
             let result_value: Value = serde_json::from_str(&result).map_err(|e| {
                 crate::error::Error::Anyhow(format!("Failed to parse result: {}", e))
@@ -366,7 +372,10 @@ pub async fn handle_get_element_position<R: Runtime>(
         Err(e) => Ok(crate::socket_server::SocketResponse {
             success: false,
             data: None,
-            error: Some(format!("Timeout waiting for element position result: {}", e)),
+            error: Some(format!(
+                "Timeout waiting for element position result: {}",
+                e
+            )),
             id: None,
         }),
     }
@@ -410,7 +419,9 @@ pub async fn handle_send_text_to_element<R: Runtime>(
         "send-text-to-element-response",
         js_payload,
         std::time::Duration::from_secs(30),
-    ).await {
+    )
+    .await
+    {
         Ok(result) => {
             let result_value: Value = serde_json::from_str(&result).map_err(|e| {
                 crate::error::Error::Anyhow(format!("Failed to parse result: {}", e))
@@ -470,7 +481,9 @@ pub async fn handle_get_page_state<R: Runtime>(
         "get-page-state-response",
         serde_json::json!({}),
         std::time::Duration::from_secs(5),
-    ).await {
+    )
+    .await
+    {
         Ok(result) => Ok(parse_js_response(&result)),
         Err(e) => Ok(crate::socket_server::SocketResponse {
             success: false,
@@ -505,7 +518,9 @@ pub async fn handle_navigate_back<R: Runtime>(
         "navigate-back-response",
         js_payload,
         std::time::Duration::from_secs(5),
-    ).await {
+    )
+    .await
+    {
         Ok(result) => Ok(parse_js_response(&result)),
         Err(e) => Ok(crate::socket_server::SocketResponse {
             success: false,
@@ -543,7 +558,9 @@ pub async fn handle_scroll_page<R: Runtime>(
         "scroll-page-response",
         js_payload,
         std::time::Duration::from_secs(5),
-    ).await {
+    )
+    .await
+    {
         Ok(result) => Ok(parse_js_response(&result)),
         Err(e) => Ok(crate::socket_server::SocketResponse {
             success: false,
@@ -567,7 +584,10 @@ pub async fn handle_fill_form<R: Runtime>(
     let emit_target = get_emit_target(app, &window_label);
 
     // Convert snake_case field keys to camelCase for JS side
-    let fields = payload.get("fields").cloned().unwrap_or(Value::Array(vec![]));
+    let fields = payload
+        .get("fields")
+        .cloned()
+        .unwrap_or(Value::Array(vec![]));
     let js_fields: Vec<Value> = if let Some(arr) = fields.as_array() {
         arr.iter()
             .map(|f| {
@@ -596,7 +616,9 @@ pub async fn handle_fill_form<R: Runtime>(
         "fill-form-response",
         js_payload,
         std::time::Duration::from_secs(30),
-    ).await {
+    )
+    .await
+    {
         Ok(result) => Ok(parse_js_response(&result)),
         Err(e) => Ok(crate::socket_server::SocketResponse {
             success: false,
@@ -661,7 +683,10 @@ pub async fn handle_type_into_focused<R: Runtime>(
         .unwrap_or(0);
 
     // Allow generous timeout for character-by-character typing + initial delay
-    let timeout_secs = std::cmp::max(10, (text.len() as u64 * delay_ms + initial_delay_ms) / 1000 + 5);
+    let timeout_secs = std::cmp::max(
+        10,
+        (text.len() as u64 * delay_ms + initial_delay_ms) / 1000 + 5,
+    );
 
     match emit_and_wait(
         app,
@@ -670,7 +695,9 @@ pub async fn handle_type_into_focused<R: Runtime>(
         "type-into-focused-response",
         js_payload,
         std::time::Duration::from_secs(timeout_secs),
-    ).await {
+    )
+    .await
+    {
         Ok(result) => Ok(parse_js_response(&result)),
         Err(e) => Ok(crate::socket_server::SocketResponse {
             success: false,
@@ -716,7 +743,9 @@ pub async fn handle_wait_for<R: Runtime>(
         "wait-for-response",
         js_payload,
         std::time::Duration::from_secs(rust_timeout_secs),
-    ).await {
+    )
+    .await
+    {
         Ok(result) => Ok(parse_js_response(&result)),
         Err(e) => Ok(crate::socket_server::SocketResponse {
             success: false,

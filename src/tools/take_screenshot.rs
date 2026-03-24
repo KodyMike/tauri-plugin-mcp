@@ -1,13 +1,13 @@
+use crate::TauriMcpExt;
 use crate::error::{Error, Result};
+use crate::models::ScreenshotRequest;
 use crate::shared::ScreenshotParams;
+use crate::socket_server::SocketResponse;
 use base64::Engine;
 use image::DynamicImage;
+use log::info;
 use serde_json::Value;
 use tauri::{AppHandle, Runtime};
-use log::info;
-use crate::TauriMcpExt;
-use crate::models::ScreenshotRequest;
-use crate::socket_server::SocketResponse;
 
 /// Resize and compress a DynamicImage to JPEG bytes based on params.
 /// Returns (jpeg_bytes, final_width, final_height).
@@ -49,10 +49,12 @@ pub fn process_image_to_bytes(
     let mut current_quality = quality;
 
     // Try encoding with JPEG
-    dynamic_image.write_to(
-        &mut std::io::Cursor::new(&mut output_data),
-        image::ImageOutputFormat::Jpeg(current_quality),
-    ).map_err(|e| Error::WindowOperationFailed(format!("Failed to encode JPEG: {}", e)))?;
+    dynamic_image
+        .write_to(
+            &mut std::io::Cursor::new(&mut output_data),
+            image::ImageOutputFormat::Jpeg(current_quality),
+        )
+        .map_err(|e| Error::WindowOperationFailed(format!("Failed to encode JPEG: {}", e)))?;
 
     // Reduce quality if needed to meet max size
     while output_data.len() as u64 > max_size_bytes && current_quality > 30 {
@@ -64,10 +66,14 @@ pub fn process_image_to_bytes(
         );
         current_quality -= 10;
         output_data.clear();
-        dynamic_image.write_to(
-            &mut std::io::Cursor::new(&mut output_data),
-            image::ImageOutputFormat::Jpeg(current_quality),
-        ).map_err(|e| Error::WindowOperationFailed(format!("Failed to re-encode JPEG: {}", e)))?;
+        dynamic_image
+            .write_to(
+                &mut std::io::Cursor::new(&mut output_data),
+                image::ImageOutputFormat::Jpeg(current_quality),
+            )
+            .map_err(|e| {
+                Error::WindowOperationFailed(format!("Failed to re-encode JPEG: {}", e))
+            })?;
     }
 
     // If still too large, resize the image
@@ -79,16 +85,17 @@ pub fn process_image_to_bytes(
             let new_width = (dynamic_image.width() as f32 * scale_factor) as u32;
             let new_height = (dynamic_image.height() as f32 * scale_factor) as u32;
             info!("[SCREENSHOT] Resizing to {}x{}", new_width, new_height);
-            dynamic_image = dynamic_image.resize(
-                new_width,
-                new_height,
-                image::imageops::FilterType::Triangle,
-            );
+            dynamic_image =
+                dynamic_image.resize(new_width, new_height, image::imageops::FilterType::Triangle);
             output_data.clear();
-            dynamic_image.write_to(
-                &mut std::io::Cursor::new(&mut output_data),
-                image::ImageOutputFormat::Jpeg(current_quality),
-            ).map_err(|e| Error::WindowOperationFailed(format!("Failed to encode resized image: {}", e)))?;
+            dynamic_image
+                .write_to(
+                    &mut std::io::Cursor::new(&mut output_data),
+                    image::ImageOutputFormat::Jpeg(current_quality),
+                )
+                .map_err(|e| {
+                    Error::WindowOperationFailed(format!("Failed to encode resized image: {}", e))
+                })?;
 
             if dynamic_image.width() <= 800 {
                 break;
@@ -148,7 +155,10 @@ pub fn process_image_to_file(
 
     // Ensure output directory exists
     std::fs::create_dir_all(output_dir).map_err(|e| {
-        Error::WindowOperationFailed(format!("Failed to create output directory '{}': {}", output_dir, e))
+        Error::WindowOperationFailed(format!(
+            "Failed to create output directory '{}': {}",
+            output_dir, e
+        ))
     })?;
 
     // Generate timestamped filename
@@ -159,10 +169,17 @@ pub fn process_image_to_file(
     let file_path = format!("{}/screenshot_{}.jpg", output_dir, timestamp);
 
     std::fs::write(&file_path, &output_data).map_err(|e| {
-        Error::WindowOperationFailed(format!("Failed to write screenshot to '{}': {}", file_path, e))
+        Error::WindowOperationFailed(format!(
+            "Failed to write screenshot to '{}': {}",
+            file_path, e
+        ))
     })?;
 
-    info!("[SCREENSHOT] Saved screenshot to: {} ({} bytes)", file_path, output_data.len());
+    info!(
+        "[SCREENSHOT] Saved screenshot to: {} ({} bytes)",
+        file_path,
+        output_data.len()
+    );
 
     Ok(file_path)
 }
@@ -172,9 +189,9 @@ pub fn process_image_to_file(
 pub fn process_thumbnail(dynamic_image: DynamicImage) -> Result<String> {
     let output_data = process_image_to_bytes(
         dynamic_image,
-        50,                    // quality
-        Some(512),             // max_width
-        300 * 1024,            // max_size: 300KB
+        50,         // quality
+        Some(512),  // max_width
+        300 * 1024, // max_size: 300KB
     )?;
 
     let base64_data = base64::engine::general_purpose::STANDARD.encode(&output_data);

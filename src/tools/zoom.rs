@@ -32,9 +32,9 @@ pub async fn handle_manage_zoom<R: Runtime>(
             let scale = parsed.scale.ok_or_else(|| {
                 crate::error::Error::Anyhow("'scale' is required for set action".to_string())
             })?;
-            webview.set_zoom(scale).map_err(|e| {
-                crate::error::Error::Anyhow(format!("Failed to set zoom: {}", e))
-            })?;
+            webview
+                .set_zoom(scale)
+                .map_err(|e| crate::error::Error::Anyhow(format!("Failed to set zoom: {}", e)))?;
             Ok(SocketResponse {
                 success: true,
                 data: Some(serde_json::json!({"action": "set", "scale": scale})),
@@ -52,7 +52,9 @@ pub async fn handle_manage_zoom<R: Runtime>(
                 "manage-zoom-response",
                 serde_json::json!({"action": "get"}),
                 std::time::Duration::from_secs(5),
-            ).await {
+            )
+            .await
+            {
                 Ok(result) => Ok(parse_js_response(&result)),
                 Err(e) => Ok(SocketResponse {
                     success: false,
