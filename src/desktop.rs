@@ -322,135 +322,66 @@ impl<R: Runtime> TauriMcp<R> {
         result
     }
 
-    /// Fallback: capture screenshot via JavaScript in the webview.
-    /// Uses canvas toDataURL to capture the visible page content.
+    /// Fallback: capture screenshot via native webkit2gtk snapshot API.
+    /// Uses the GTK webview's built-in snapshot to get a pixel-perfect capture.
     #[cfg(target_os = "linux")]
     async fn take_screenshot_via_js(
         &self,
         window_label: &str,
         params: &ScreenshotParams,
     ) -> Option<ScreenshotResponse> {
-        use crate::tools::webview::emit_and_wait;
-        use base64::Engine;
+        use crate::platform::shared::finalize_screenshot;
 
-        let emit_target = get_emit_target(&self.app, window_label);
-        let quality = params.quality.unwrap_or(70);
-        let max_width = params.max_width.unwrap_or(1400);
+        // Get the webview to access the native GTK widget
+        let webview = get_webview_for_eval(&self.app, window_label)?;
 
-        // JS code that captures the visible viewport as a JPEG data URL
-        let js_code = format!(
-            r#"(async () => {{
-                const w = document.documentElement.scrollWidth;
-                const h = document.documentElement.scrollHeight;
-                const vw = window.innerWidth;
-                const vh = window.innerHeight;
-                const canvas = document.createElement('canvas');
-                const scale = Math.min(1, {max_width} / vw);
-                canvas.width = Math.round(vw * scale);
-                canvas.height = Math.round(vh * scale);
-                const ctx = canvas.getContext('2d');
-                ctx.scale(scale, scale);
-                // Render all visible elements by cloning DOM into SVG foreignObject
-                const html = document.documentElement.outerHTML;
-                const blob = new Blob([`
-                    <svg xmlns="http://www.w3.org/2000/svg" width="${{vw}}" height="${{vh}}">
-                        <foreignObject width="100%" height="100%">
-                            ${{new XMLSerializer().serializeToString(document.documentElement)}}
-                        </foreignObject>
-                    </svg>
-                `], {{type: 'image/svg+xml'}});
-                const url = URL.createObjectURL(blob);
-                const img = new Image();
-                await new Promise((resolve, reject) => {{
-                    img.onload = resolve;
-                    img.onerror = reject;
-                    img.src = url;
-                }});
-                ctx.drawImage(img, 0, 0);
-                URL.revokeObjectURL(url);
-                return canvas.toDataURL('image/jpeg', {quality_f});
-            }})()"#,
-            max_width = max_width,
-            quality_f = quality as f64 / 100.0
+        info!("[TAURI_MCP] Attempting native webkit2gtk snapshot fallback");
+
+        // Use with_webview to access the underlying webkit2gtk::WebView
+        let (tx, rx) = tokio::sync::oneshot::channel::<Option<Vec<u8>>>();
+
+        webview
+            .with_webview(move |platform_webview| {
+                use webkit2gtk::WebViewExt;
+
+                let wk_view = platform_webview.inner();
+
+                wk_view.snapshot(
+                    webkit2gtk::SnapshotRegion::Visible,
+                    webkit2gtk::SnapshotOptions::NONE,
+                    None::<&gio::Cancellable>,
+                    move |result: std::result::Result<cairo::Surface, glib::Error>| {
+                        let png_bytes = result.ok().and_then(|surface| {
+                            let mut buf: Vec<u8> = Vec::new();
+                            if surface.write_to_png(&mut buf).is_ok() {
+                                Some(buf)
+                            } else {
+                                None
+                            }
+                        });
+                        let _ = tx.send(png_bytes);
+                    },
+                );
+            })
+            .ok()?;
+
+        // Wait for the snapshot callback
+        let png_bytes = tokio::time::timeout(Duration::from_secs(10), rx)
+            .await
+            .ok()?  // timeout
+            .ok()?  // channel error
+            ?;      // None if snapshot failed
+
+        info!(
+            "[TAURI_MCP] Native webkit2gtk snapshot captured: {} bytes",
+            png_bytes.len()
         );
 
-        let result = emit_and_wait(
-            &self.app,
-            &emit_target,
-            "execute-js",
-            "execute-js-response",
-            serde_json::json!(js_code),
-            Duration::from_secs(15),
-        )
-        .await;
+        // Decode the PNG into a DynamicImage for processing through the standard pipeline
+        let dynamic_image = image::load_from_memory_with_format(&png_bytes, image::ImageFormat::Png)
+            .ok()?;
 
-        match result {
-            Ok(response_str) => {
-                let response: serde_json::Value =
-                    serde_json::from_str(&response_str).ok()?;
-                let data_url = response.get("result")?.as_str()?;
-
-                if !data_url.starts_with("data:image/") {
-                    info!("[TAURI_MCP] JS fallback returned non-image data");
-                    return None;
-                }
-
-                info!("[TAURI_MCP] JS-based screenshot captured successfully");
-
-                let save_to_disk = params.save_to_disk.unwrap_or(false);
-                let thumbnail = params.thumbnail.unwrap_or(false);
-
-                if save_to_disk {
-                    // Extract base64 and save to file
-                    let b64 = data_url.split(',').nth(1)?;
-                    let bytes = base64::engine::general_purpose::STANDARD
-                        .decode(b64)
-                        .ok()?;
-
-                    let output_dir = params.output_dir.clone().unwrap_or_else(|| {
-                        std::env::temp_dir()
-                            .join("tauri-mcp-screenshots")
-                            .to_string_lossy()
-                            .to_string()
-                    });
-                    std::fs::create_dir_all(&output_dir).ok()?;
-                    let timestamp = std::time::SystemTime::now()
-                        .duration_since(std::time::UNIX_EPOCH)
-                        .unwrap_or_default()
-                        .as_millis();
-                    let file_path = format!("{}/screenshot_{}.jpg", output_dir, timestamp);
-                    std::fs::write(&file_path, &bytes).ok()?;
-
-                    if thumbnail {
-                        // Return both file path and thumbnail inline
-                        Some(ScreenshotResponse {
-                            data: Some(data_url.to_string()),
-                            success: true,
-                            error: None,
-                            file_path: Some(file_path),
-                        })
-                    } else {
-                        Some(ScreenshotResponse {
-                            data: None,
-                            success: true,
-                            error: None,
-                            file_path: Some(file_path),
-                        })
-                    }
-                } else {
-                    Some(ScreenshotResponse {
-                        data: Some(data_url.to_string()),
-                        success: true,
-                        error: None,
-                        file_path: None,
-                    })
-                }
-            }
-            Err(e) => {
-                info!("[TAURI_MCP] JS-based screenshot fallback also failed: {}", e);
-                None
-            }
-        }
+        finalize_screenshot(dynamic_image, params).ok()
     }
 
     // Add async method to perform window operations
