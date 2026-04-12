@@ -304,7 +304,8 @@ impl<R: Runtime> TauriMcp<R> {
         info!("[TAURI_MCP] Taking screenshot with default parameters");
 
         // Use platform-specific implementation to capture the window
-        let result = crate::platform::current::take_screenshot(params.clone(), window_context).await;
+        let result =
+            crate::platform::current::take_screenshot(params.clone(), window_context).await;
 
         // On Linux, if xcap failed, fall back to JS-based webview capture.
         // Note: handle_screenshot_task wraps errors as Ok(ScreenshotResponse { error: Some(...) }),
@@ -312,7 +313,9 @@ impl<R: Runtime> TauriMcp<R> {
         #[cfg(target_os = "linux")]
         if let Ok(ref resp) = result {
             if resp.error.is_some() || !resp.success {
-                info!("[TAURI_MCP] xcap screenshot failed, trying JS-based webview capture fallback");
+                info!(
+                    "[TAURI_MCP] xcap screenshot failed, trying JS-based webview capture fallback"
+                );
                 if let Some(fallback) = self.take_screenshot_via_js(&window_label, &params).await {
                     return Ok(fallback);
                 }
@@ -370,7 +373,7 @@ impl<R: Runtime> TauriMcp<R> {
             .await
             .ok()?  // timeout
             .ok()?  // channel error
-            ?;      // None if snapshot failed
+            ?; // None if snapshot failed
 
         info!(
             "[TAURI_MCP] Native webkit2gtk snapshot captured: {} bytes",
@@ -378,8 +381,8 @@ impl<R: Runtime> TauriMcp<R> {
         );
 
         // Decode the PNG into a DynamicImage for processing through the standard pipeline
-        let dynamic_image = image::load_from_memory_with_format(&png_bytes, image::ImageFormat::Png)
-            .ok()?;
+        let dynamic_image =
+            image::load_from_memory_with_format(&png_bytes, image::ImageFormat::Png).ok()?;
 
         finalize_screenshot(dynamic_image, params).ok()
     }
