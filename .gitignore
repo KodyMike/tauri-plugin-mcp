@@ -73,6 +73,7 @@ Desktop.ini
 *.msi
 *.app
 .codemap
+.wave-guard/
 
 .claude/
 CLAUDE.md
