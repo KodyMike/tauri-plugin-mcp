@@ -4,11 +4,13 @@ import * as fs from 'fs';
 
 // Constants
 const SOCKET_FILENAME = 'tauri-mcp.sock';
-// Use XDG_RUNTIME_DIR on Linux (user-private, 0700) instead of /tmp/ (world-readable).
-// Falls back to /tmp/ only if XDG_RUNTIME_DIR is unset.
+// Use XDG_RUNTIME_DIR on Linux (user-private, 0700) when set, otherwise the OS
+// temp dir. This mirrors the Rust plugin's default (XDG_RUNTIME_DIR || temp_dir),
+// which matters on macOS where the plugin binds under $TMPDIR (/var/folders/.../T)
+// rather than /tmp — so a /tmp fallback here would never find the socket.
 const DEFAULT_SOCKET_PATH = os.platform() === 'win32'
   ? `${os.tmpdir()}\\${SOCKET_FILENAME}`
-  : `${process.env.XDG_RUNTIME_DIR || '/tmp'}/${SOCKET_FILENAME}`;
+  : `${process.env.XDG_RUNTIME_DIR || os.tmpdir()}/${SOCKET_FILENAME}`;
 
 // Connection configuration types
 export interface IpcConfig {
